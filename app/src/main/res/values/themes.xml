@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- 다크 뉴모피즘: 시작 화면(윈도우)도 앱 배경색과 동일하게 -->
+    <style name="Theme.AndroidApplication" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/neu_bg</item>
+        <item name="android:statusBarColor">@color/neu_bg</item>
+        <item name="android:navigationBarColor">@color/neu_bg</item>
+    </style>
+</resources>

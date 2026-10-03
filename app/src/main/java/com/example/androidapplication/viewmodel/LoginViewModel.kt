@@ -1,6 +1,7 @@
 package com.example.androidapplication.viewmodel
 
 import com.example.androidapplication.repository.AuthRepository
+import com.example.androidapplication.storage.AuthPrefs
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,8 +15,13 @@ import java.io.IOException
 
 
 class LoginViewModel(
-    private val repository: AuthRepository
+    private val repository: AuthRepository,
+    private val authPrefs: AuthPrefs
 ) : ViewModel() {
+
+    // 로그인 상태 유지: 지난번 체크 상태와 아이디로 화면을 채운다
+    val savedRememberMe: Boolean = authPrefs.rememberMe
+    val savedUserId: String = authPrefs.savedUserId.orEmpty()
 
     var loginMessage by mutableStateOf("")
         private set
@@ -31,11 +37,12 @@ class LoginViewModel(
 
     fun login(
         id: String,
-        password: String
+        password: String,
+        rememberMe: Boolean
     ) {
         // 서버 연결 전 개발용: 서버 요청 없이 바로 로그인 성공 처리
         if (SKIP_SERVER_LOGIN) {
-            loginSuccess = true
+            onLoginSucceeded(id, DEV_TOKEN, rememberMe)
             return
         }
 
@@ -59,11 +66,8 @@ class LoginViewModel(
                             loginMessage = "서버 응답이 올바르지 않습니다."
                             isLoginError = true
                         } else if (body.success) {
-                            loginSuccess = true
                             loginMessage = ""
-                            println(
-                                "token: ${body.token}"
-                            )
+                            onLoginSucceeded(id, body.token, rememberMe)
                         } else {
                             loginMessage =
                                 body.message
@@ -99,6 +103,25 @@ class LoginViewModel(
         }
     }
 
+    // 체크한 채 로그인하면 아이디·토큰을 저장하고, 해제했으면 지운다
+    private fun onLoginSucceeded(
+        id: String,
+        token: String,
+        rememberMe: Boolean
+    ) {
+        if (rememberMe) {
+            authPrefs.saveSession(id, token)
+        } else {
+            authPrefs.clearAll()
+        }
+        loginSuccess = true
+    }
+
+    fun clearMessage() {
+        loginMessage = ""
+        isLoginError = false
+    }
+
     fun consumeLoginSuccess() {
         loginSuccess = false
     }
@@ -106,5 +129,6 @@ class LoginViewModel(
     private companion object {
         // 서버 연결이 끝나면 false 로 바꾸거나 이 분기를 삭제할 것
         const val SKIP_SERVER_LOGIN = true
+        const val DEV_TOKEN = "dev-token"
     }
 }

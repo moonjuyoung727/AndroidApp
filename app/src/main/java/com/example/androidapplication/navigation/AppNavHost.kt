@@ -1,5 +1,6 @@
 package com.example.androidapplication.navigation
 
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Event
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.example.androidapplication.ui.theme.NeuAccent
 import com.example.androidapplication.ui.theme.NeuBg
 import com.example.androidapplication.ui.theme.NeuMuted
@@ -39,10 +41,8 @@ import com.example.androidapplication.model.NotificationItem
 import com.example.androidapplication.network.RetrofitClient
 import com.example.androidapplication.repository.AuthRepository
 import com.example.androidapplication.repository.EventRepository
-import com.example.androidapplication.ui.auth.FindIdScreen
-import com.example.androidapplication.ui.auth.FindPasswordScreen
+import com.example.androidapplication.storage.AuthPrefs
 import com.example.androidapplication.ui.auth.LoginScreen
-import com.example.androidapplication.ui.auth.SignupScreen
 import com.example.androidapplication.ui.camera.CameraDetailScreen
 import com.example.androidapplication.ui.camera.CameraListScreen
 import com.example.androidapplication.ui.events.EventListScreen
@@ -103,8 +103,16 @@ fun AppNavHost() {
 
     val navController = rememberNavController()
 
+    val context = LocalContext.current
+    val authPrefs = remember { AuthPrefs(context) }
+
     val repository = remember { AuthRepository(RetrofitClient.authApi) }
-    val factory = remember { AuthViewModelFactory(repository) }
+    val factory = remember { AuthViewModelFactory(repository, authPrefs) }
+
+    // 로그인 상태 유지로 저장된 세션이 있으면 로그인 화면을 건너뛴다
+    val startDestination = remember {
+        if (authPrefs.hasSavedSession) "home" else "login"
+    }
     val eventFactory = remember {
         viewModelFactory {
             initializer { EventDetailViewModel(EventRepository(RetrofitClient.eventApi)) }
@@ -141,6 +149,12 @@ fun AppNavHost() {
                         ProfileMenuAction(
                             onUserSettingsClick = {
                                 navController.navigate("user-settings") { launchSingleTop = true }
+                            },
+                            onLogoutClick = {
+                                authPrefs.clearSession()
+                                navController.navigate("login") {
+                                    popUpTo(navController.graph.id) { inclusive = true }
+                                }
                             }
                         )
                     }
@@ -181,37 +195,24 @@ fun AppNavHost() {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = "login",
-            modifier = Modifier.padding(innerPadding)
+            startDestination = startDestination,
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
         ) {
+            // 로그인 / 회원가입 / 아이디·비밀번호 찾기는 한 화면 안에서 전환된다
             composable("login") {
                 val loginViewModel: LoginViewModel = viewModel(factory = factory)
+                val signupViewModel: SignupViewModel = viewModel(factory = factory)
                 LoginScreen(
                     viewModel = loginViewModel,
+                    signupViewModel = signupViewModel,
                     onLoginSuccess = {
                         navController.navigate("home") {
                             popUpTo("login") { inclusive = true }
                         }
-                    },
-                    onFindIdClick = { navController.navigate("find-id") },
-                    onFindPasswordClick = { navController.navigate("find-password") },
-                    onSignupClick = { navController.navigate("signup") }
+                    }
                 )
-            }
-            composable("signup") {
-
-                val signupViewModel: SignupViewModel = viewModel(factory = factory)
-                SignupScreen(
-                    viewModel = signupViewModel,
-                    onSignupSuccess = { navController.popBackStack() },
-                    onBackClick = { navController.popBackStack() }
-                )
-            }
-            composable("find-id") {
-                FindIdScreen(onBackClick = { navController.popBackStack() })
-            }
-            composable("find-password") {
-                FindPasswordScreen(onBackClick = { navController.popBackStack() })
             }
             /* ==== 메인 화면 (상단/하단바 표시 ==== */
             composable("home") { HomeScreen() }

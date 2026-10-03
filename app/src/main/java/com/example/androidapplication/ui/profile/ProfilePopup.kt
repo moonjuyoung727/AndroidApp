@@ -27,7 +27,8 @@ import androidx.compose.ui.unit.dp
 // 상단바 프로필 아이콘 + 누르면 뜨는 계정 요약 팝업
 @Composable
 fun ProfileMenuAction(
-    onUserSettingsClick: () -> Unit
+    onUserSettingsClick: () -> Unit,
+    onLogoutClick: () -> Unit
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
 
@@ -56,6 +57,13 @@ fun ProfileMenuAction(
                 onClick = {
                     expanded = false
                     onUserSettingsClick()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("로그아웃") },
+                onClick = {
+                    expanded = false
+                    onLogoutClick()
                 }
             )
         }

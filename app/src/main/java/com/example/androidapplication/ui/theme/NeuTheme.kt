@@ -2,6 +2,7 @@ package com.example.androidapplication.ui.theme
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -170,6 +171,7 @@ fun NeuButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     shape: Shape = NeuButtonShape,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     content: @Composable RowScope.() -> Unit
 ) {
     val source = remember { MutableInteractionSource() }
@@ -192,6 +194,7 @@ fun NeuButton(
             disabledContainerColor = Color.Transparent,
             disabledContentColor = NeuBg.copy(alpha = 0.6f)
         ),
+        contentPadding = contentPadding,
         content = content
     )
 }

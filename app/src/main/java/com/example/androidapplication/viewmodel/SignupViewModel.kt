@@ -170,6 +170,10 @@ class SignupViewModel(
         }
     }
 
+    fun clearMessage() {
+        signupMessage = ""
+    }
+
     fun consumeSignupSuccess() {
         signupSuccess = false
     }

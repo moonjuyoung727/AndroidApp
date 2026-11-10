@@ -2,21 +2,25 @@ package com.example.androidapplication
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import com.example.androidapplication.navigation.AppNavHost
-import com.example.androidapplication.ui.auth.LoginScreen
-import com.example.androidapplication.ui.theme.NeuTheme
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.ui.graphics.toArgb
+import com.example.androidapplication.core.designsystem.NeuBg
+import com.example.androidapplication.core.designsystem.NeuTheme
+import com.example.androidapplication.navigation.AppRoot
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    // 앱 처음 실행될 때 시작되는 화면
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-            // 화면 띄우기
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(NeuBg.toArgb()),
+            navigationBarStyle = SystemBarStyle.dark(NeuBg.toArgb())
+        )
         setContent {
-            NeuTheme {
-                AppNavHost()
-            }
+            NeuTheme { AppRoot() }
         }
     }
 }

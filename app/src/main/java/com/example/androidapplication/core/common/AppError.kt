@@ -13,7 +13,7 @@ const val FEATURE_DISABLED_MESSAGE = "서버 연동 후 사용할 수 있습니�
 
 open class AppError(override val message: String) : Exception(message)
 
-/** 서버가 오류로 응답했다. 본문은 { error_code, message, details }. */
+/** 서버가 오류로 응답했다. 본문은 { error: { code, message, details } }. */
 class ApiError(val status: Int, val code: String?, message: String, val details: String? = null) : AppError(message)
 
 /** 서버에 닿지 못했다 (연결 실패·타임아웃). [viaVpn]이면 VPN 배너가 안내를 맡는다. */

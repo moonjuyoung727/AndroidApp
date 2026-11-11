@@ -235,9 +235,14 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
             }
         }
 
+        val live = camera.isOnline && stream == StreamState.Connected
         StatusPill(
-            "${if (camera.isOnline) "LIVE" else "OFFLINE"} · CH$channel",
-            if (camera.isOnline) NeuDanger else NeuMuted,
+            when {
+                !camera.isOnline -> "OFFLINE · CH$channel"
+                live -> "LIVE · CH$channel"
+                else -> "CH$channel"
+            },
+            if (live) NeuDanger else NeuMuted,
             Modifier.align(Alignment.TopStart).padding(10.dp)
         )
         DimIconButton(Icons.Default.Tune, "${camera.name} 상세", { detailOpen = true }, Modifier.align(Alignment.TopEnd), tint = Color.White)
@@ -246,8 +251,14 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
             Modifier.align(Alignment.BottomStart).padding(10.dp),
             color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis
         )
-        if (camera.isOnline && stream != StreamState.Connected && (reconnecting || stream == StreamState.Failed)) {
-            Text("재연결 중...", Modifier.align(Alignment.Center), color = NeuWarning, style = MaterialTheme.typography.labelMedium)
+        val streamMessage = when {
+            !camera.isOnline || stream == StreamState.Connected -> null
+            reconnecting || stream == StreamState.Failed -> "재연결 중..."
+            stream == StreamState.Connecting -> "연결 중..."
+            else -> null
+        }
+        if (streamMessage != null) {
+            Text(streamMessage, Modifier.align(Alignment.Center), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
         }
     }
 

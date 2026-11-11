@@ -41,7 +41,6 @@ class RemoteClientVpnProbe @Inject constructor(
     private val caller: Lazy<ApiCaller>
 ) : ClientVpnProbe {
     override suspend fun isConnected(transportActive: Boolean): Boolean {
-        if (ApiConfig.SKIP_STATUS_CHECK) return transportActive
         val status = caller.get().call("VPN 상태 확인 실패") { api.get().clientStatus() }
         return isClientVpnConnected(status.connected, status.clientIp, transportActive)
     }

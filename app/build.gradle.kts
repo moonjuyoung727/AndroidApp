@@ -36,10 +36,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ICD-01: 로그인·회원가입·아이디/비밀번호 찾기·VPN 등록은 공인 HTTPS, 나머지는 VPN 내부 [TBR]
+        // I2: 로그인을 포함한 모든 API가 VPN 내부 서버를 쓴다
         buildConfigField(
             "String", "API_BASE_URL_PUBLIC",
-            configValue("securecam.apiBaseUrl.public", "https://api.securecam.com/v1")
+            configValue("securecam.apiBaseUrl.public", "http://10.0.0.100:3000/v1")
         )
         buildConfigField(
             "String", "API_BASE_URL_VPN",

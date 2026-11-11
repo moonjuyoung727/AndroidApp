@@ -130,6 +130,13 @@ class HttpErrorHandlingTest {
         assertEquals("기본 문구", failure<ApiError>().message)
     }
 
+    @Test fun wrapped_error_body_is_read() = runTest {
+        enqueue(404, """{"error":{"code":"NOT_FOUND","message":"보드 없음","details":{}}}""")
+        val error = failure<ApiError>()
+        assertEquals("보드 없음", error.message)
+        assertEquals("NOT_FOUND", error.code)
+    }
+
     @Test fun status_specific_fallback() = runTest {
         enqueue(429)
         try {

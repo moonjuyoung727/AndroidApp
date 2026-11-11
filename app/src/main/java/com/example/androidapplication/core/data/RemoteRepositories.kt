@@ -59,7 +59,6 @@ class RemoteAuthRepository @Inject constructor(
     override suspend fun login(email: String, password: String, autoLogin: Boolean): Session {
         val r = caller.call(
             fallback = "로그인 처리 중 문제가 발생했습니다.",
-            public = true,
             statusFallback = mapOf(
                 400 to "이메일 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.",
                 429 to "로그인 시도 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요."
@@ -71,20 +70,18 @@ class RemoteAuthRepository @Inject constructor(
     override suspend fun register(email: String, password: String, name: String) {
         caller.call(
             fallback = "회원가입 처리 중 문제가 발생했습니다.",
-            public = true,
             statusFallback = mapOf(409 to "이미 가입된 이메일입니다.")
         ) { publicApi.register(RegisterRequest(email, password, name)) }
     }
 
     override suspend fun findId(name: String, phone: String, code: String): String =
-        caller.call("아이디 찾기에 실패했습니다.", public = true) {
+        caller.call("아이디 찾기에 실패했습니다.") {
             publicApi.findId(FindIdRequest(name, phone, code)).email
         }
 
     override suspend fun resetPassword(email: String, code: String, newPassword: String): String? =
         caller.call(
             fallback = "비밀번호 재설정에 실패했습니다.",
-            public = true,
             statusFallback = mapOf(
                 400 to "인증 코드가 유효하지 않거나 만료되었습니다.",
                 404 to "등록되지 않은 이메일입니다."

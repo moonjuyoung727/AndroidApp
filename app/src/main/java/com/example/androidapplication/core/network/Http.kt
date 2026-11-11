@@ -10,6 +10,8 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import okhttp3.Interceptor
 import okhttp3.Response
 import retrofit2.HttpException
@@ -38,8 +40,11 @@ interface ConnectivityReporter {
     fun onVpnServerReachable()
 }
 
-fun parseErrorBody(raw: String?): ErrorBody =
-    runCatching { AppJson.decodeFromString<ErrorBody>(raw.orEmpty()) }.getOrDefault(ErrorBody())
+/** 서버 오류 본문 { error: { code, message, details } }를 읽는다. error로 감싸지 않은 본문도 받는다. */
+fun parseErrorBody(raw: String?): ErrorBody = runCatching {
+    val root = AppJson.parseToJsonElement(raw.orEmpty()).jsonObject
+    AppJson.decodeFromJsonElement(ErrorBody.serializer(), root["error"] as? JsonObject ?: root)
+}.getOrDefault(ErrorBody())
 
 /** 토큰은 우리 API 호스트로만 보낸다. */
 class AuthInterceptor(

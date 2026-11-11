@@ -7,13 +7,10 @@ object ApiConfig {
     val publicBaseUrl: String = BuildConfig.API_BASE_URL_PUBLIC.trimEnd('/') + "/"
     val vpnBaseUrl: String = BuildConfig.API_BASE_URL_VPN.trimEnd('/') + "/"
 
-    const val VPN_SERVER_IP = "10.0.0.1"
+    const val VPN_SERVER_IP = "10.0.0.100"
     const val VPN_PORT = 51820
     const val VPN_BOARD_SUBNET = "10.0.1.0/24"
     const val VPN_CLIENT_SUBNET = "10.0.2.0/24"
-
-    /** GET /status가 서버에 없어서 켜 둔다. 켜져 있으면 TRANSPORT_VPN으로만 판단한다. */
-    const val SKIP_STATUS_CHECK = true
 
     fun isInSubnet(ip: String?, subnet: String): Boolean {
         val prefix = subnet.substringBefore('/').split('.').take(3).joinToString(".")

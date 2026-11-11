@@ -1,16 +1,19 @@
 package com.example.androidapplication.core.network
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
 
 // 응답 필드가 빠져도 죽지 않도록 모든 필드에 기본값을 둔다
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ErrorBody(
-    @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("error_code") @JsonNames("code") val errorCode: String? = null,
     val message: String? = null,
     val details: JsonElement? = null
 )

@@ -159,7 +159,7 @@ class FakeVpnRepository @Inject constructor() : VpnRepository {
         val status = listOf("connected", "connected", "disconnected", "error")[i % 4]
         VpnDevice(
             "00000000AB%02X".format(i + 1), "카메라 ${i + 1}", "SN-2026-%04d".format(i + 1), status, "10.0.1.${101 + i}",
-            "10.0.0.1", 302_640L, Instant.now().minusSeconds(30).toString(),
+            "10.0.0.100", 302_640L, Instant.now().minusSeconds(30).toString(),
             if (status == "error") "Handshake Timeout" else null, null
         )
     }

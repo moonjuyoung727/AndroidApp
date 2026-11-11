@@ -12,7 +12,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.QueryMap
 
-/** ICD-01: 공인 HTTPS로 호출하는 API (VPN 연결 전에 쓰인다). */
+/** 로그인 전에 쓰는 API. I2에서는 이 API도 VPN 내부 서버로 나간다. */
 interface PublicApi {
     @POST("auth/login") suspend fun login(@Body body: LoginRequest): LoginResponse
     @POST("auth/register") suspend fun register(@Body body: RegisterRequest)

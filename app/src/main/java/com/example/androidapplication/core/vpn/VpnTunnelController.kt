@@ -149,7 +149,7 @@ class EmbeddedWireGuardController @Inject constructor(
 
     private fun VpnClientRegisterResponse.toSavedPeer(): SavedPeer? {
         if (vpnIp.isBlank() || serverPubkey.isBlank() || serverEndpoint.isBlank()) return null
-        val ips = allowedIps.toCidrList().ifEmpty { listOf("10.0.0.1/32") }
+        val ips = allowedIps.toCidrList().ifEmpty { listOf("${ApiConfig.VPN_SERVER_IP}/32") }
         return SavedPeer(vpnIp.substringBefore('/'), serverPubkey, serverEndpoint, ips)
     }
 

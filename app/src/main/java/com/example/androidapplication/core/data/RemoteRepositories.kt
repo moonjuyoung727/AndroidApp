@@ -1,7 +1,14 @@
 package com.example.androidapplication.core.data
 
+import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.common.ApiErrorCode
 import com.example.androidapplication.core.common.FeatureDisabledError
+import com.example.androidapplication.core.common.LOGIN_INVALID_CREDENTIALS_MESSAGE
+import com.example.androidapplication.core.common.LOGIN_TOO_MANY_REQUESTS_MESSAGE
+import com.example.androidapplication.core.common.SIGNUP_EMAIL_EXISTS_MESSAGE
 import com.example.androidapplication.core.common.LIST_TIMEOUT_MS
+import com.example.androidapplication.core.common.READ_TIMEOUT_MS
+import com.example.androidapplication.core.common.VPN_API_TIMEOUT_MS
 import com.example.androidapplication.core.common.Mac
 import com.example.androidapplication.core.config.FeatureFlags
 import com.example.androidapplication.core.network.AccountApi
@@ -9,6 +16,7 @@ import com.example.androidapplication.core.network.ApiCaller
 import com.example.androidapplication.core.network.AppJson
 import com.example.androidapplication.core.network.AutoRenewRequest
 import com.example.androidapplication.core.network.ChangePasswordRequest
+import com.example.androidapplication.core.network.GeneralSettingKeys
 import com.example.androidapplication.core.network.DeleteAccountRequest
 import com.example.androidapplication.core.network.DeviceAlertDto
 import com.example.androidapplication.core.network.DeviceApi
@@ -44,6 +52,22 @@ import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** [messages]에 있는 코드는 서버 message와 관계없이 정해진 문구로 바꾼다. */
+internal fun ApiError.withFixedMessage(messages: Map<ApiErrorCode, String>): ApiError =
+    messages[kind]?.let { ApiError(status, code, it, details) } ?: this
+
+/** 로그인 400(INVALID_CREDENTIALS)·429. */
+internal fun ApiError.forLogin(): ApiError = withFixedMessage(
+    mapOf(
+        ApiErrorCode.BAD_REQUEST to LOGIN_INVALID_CREDENTIALS_MESSAGE,
+        ApiErrorCode.TOO_MANY_REQUESTS to LOGIN_TOO_MANY_REQUESTS_MESSAGE
+    )
+)
+
+/** 회원가입 409. 400은 어느 입력이 틀렸는지 서버 message로 안내한다. */
+internal fun ApiError.forSignup(): ApiError =
+    withFixedMessage(mapOf(ApiErrorCode.CONFLICT to SIGNUP_EMAIL_EXISTS_MESSAGE))
+
 class RemoteAuthRepository @Inject constructor(
     private val publicApi: PublicApi,
     private val accountApi: AccountApi,
@@ -57,21 +81,24 @@ class RemoteAuthRepository @Inject constructor(
     override val canUpdateProfile get() = FeatureFlags.profileUpdate
 
     override suspend fun login(email: String, password: String, autoLogin: Boolean): Session {
-        val r = caller.call(
-            fallback = "로그인 처리 중 문제가 발생했습니다.",
-            statusFallback = mapOf(
-                400 to "이메일 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.",
-                429 to "로그인 시도 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요."
-            )
-        ) { publicApi.login(LoginRequest(email, password, autoLogin)) }
+        val r = try {
+            caller.call(fallback = "로그인 처리 중 문제가 발생했습니다.") {
+                publicApi.login(LoginRequest(email, password, autoLogin))
+            }
+        } catch (e: ApiError) {
+            throw e.forLogin()
+        }
         return Session(r.accessToken, r.userId, r.name, r.email.ifEmpty { email })
     }
 
     override suspend fun register(email: String, password: String, name: String) {
-        caller.call(
-            fallback = "회원가입 처리 중 문제가 발생했습니다.",
-            statusFallback = mapOf(409 to "이미 가입된 이메일입니다.")
-        ) { publicApi.register(RegisterRequest(email, password, name)) }
+        try {
+            caller.call(fallback = "회원가입 처리 중 문제가 발생했습니다.") {
+                publicApi.register(RegisterRequest(email, password, name))
+            }
+        } catch (e: ApiError) {
+            throw e.forSignup()
+        }
     }
 
     override suspend fun findId(name: String, phone: String, code: String): String =
@@ -171,8 +198,8 @@ class RemoteDeviceRepository @Inject constructor(
     override val cameras = store.state
     override val canUpdate get() = FeatureFlags.deviceUpdate
 
-    override suspend fun refresh(silent: Boolean) = silentlyIf(silent) {
-        store.refresh {
+    override suspend fun refresh(silent: Boolean, force: Boolean) = silentlyIf(silent) {
+        store.refresh(force) {
             caller.call("카메라 목록 조회에 실패했습니다.", timeoutMs = LIST_TIMEOUT_MS) { parseDevices(api.devices()) }
         }
     }
@@ -181,7 +208,7 @@ class RemoteDeviceRepository @Inject constructor(
         caller.call("카메라 등록에 실패했습니다.") {
             api.register(RegisterDeviceRequest(Mac.normalize(mac), name.ifBlank { null }, location))
         }
-        refresh(silent = true)
+        refresh(silent = true, force = true)
     }
 
     override suspend fun update(mac: String, name: String?, location: String?, description: String?) {
@@ -189,7 +216,7 @@ class RemoteDeviceRepository @Inject constructor(
         caller.call("카메라 정보 수정에 실패했습니다.") {
             api.update(mac, DevicePatchRequest(name, location, description))
         }
-        refresh(silent = true)
+        refresh(silent = true, force = true)
     }
 
     override suspend fun status(mac: String): DeviceStatus? {
@@ -226,7 +253,7 @@ class RemoteEventRepository @Inject constructor(
             query.eventType?.let { put("event_type", it) }
             query.status?.let { put("status", it) }
         }
-        val body = caller.call("이벤트 조회 실패") { api.events(params) }
+        val body = caller.call("이벤트 조회 실패", timeoutMs = LIST_TIMEOUT_MS) { api.events(params) }
         return EventPage(body.total, body.page, body.items.map(EventDto::toEvent))
     }
 
@@ -247,12 +274,12 @@ class RemoteVpnRepository @Inject constructor(
     override suspend fun refresh(silent: Boolean) = silentlyIf(silent) {
         store.refresh {
             if (!FeatureFlags.vpnConnections) return@refresh emptyList()
-            caller.call("VPN 장치 목록 조회 실패", timeoutMs = LIST_TIMEOUT_MS) { parseVpnConnections(api.connections()) }
+            caller.call("VPN 장치 목록 조회 실패", timeoutMs = VPN_API_TIMEOUT_MS) { parseVpnConnections(api.connections()) }
         }
     }
 
     override suspend fun recover(mac: String) {
-        caller.call("VPN 복구 요청 실패") { api.recover(mac) }
+        caller.call("VPN 복구 요청 실패", timeoutMs = VPN_API_TIMEOUT_MS) { api.recover(mac) }
         refresh(silent = true)
     }
 
@@ -268,7 +295,7 @@ class RemoteSettingsRepository @Inject constructor(
     override val general: StateFlow<GeneralSettings> = _general.asStateFlow()
 
     override suspend fun loadGeneral() {
-        val dto = caller.call("일반 설정 정보 조회 실패") { api.general() }
+        val dto = caller.call("일반 설정 정보 조회 실패", timeoutMs = READ_TIMEOUT_MS) { api.general() }
         _general.value = GeneralSettings(dto.autoRefresh, dto.showOfflineBoards, dto.defaultChannel.takeIf { it in setOf(2, 4, 6) } ?: 2)
     }
 
@@ -277,9 +304,9 @@ class RemoteSettingsRepository @Inject constructor(
         _general.value = next
         try {
             caller.call("설정 업데이트 실패") {
-                if (next.autoRefresh != previous.autoRefresh) api.updateGeneral("autoRefresh", valueBody(JsonPrimitive(next.autoRefresh)))
-                if (next.showOfflineBoards != previous.showOfflineBoards) api.updateGeneral("showOfflineBoards", valueBody(JsonPrimitive(next.showOfflineBoards)))
-                if (next.defaultChannel != previous.defaultChannel) api.updateGeneral("defaultChannel", valueBody(JsonPrimitive(next.defaultChannel)))
+                if (next.autoRefresh != previous.autoRefresh) api.updateGeneral(GeneralSettingKeys.AUTO_REFRESH, valueBody(JsonPrimitive(next.autoRefresh)))
+                if (next.showOfflineBoards != previous.showOfflineBoards) api.updateGeneral(GeneralSettingKeys.SHOW_OFFLINE_BOARDS, valueBody(JsonPrimitive(next.showOfflineBoards)))
+                if (next.defaultChannel != previous.defaultChannel) api.updateGeneral(GeneralSettingKeys.DEFAULT_CHANNEL, valueBody(JsonPrimitive(next.defaultChannel)))
             }
         } catch (e: Exception) {
             _general.value = previous
@@ -290,7 +317,7 @@ class RemoteSettingsRepository @Inject constructor(
     private fun valueBody(value: JsonPrimitive) = JsonObject(mapOf("value" to value))
 
     override suspend fun notifications(): NotificationSettings {
-        val dto = caller.call("알림 설정 정보 조회 실패") { api.notifications() }
+        val dto = caller.call("알림 설정 정보 조회 실패", timeoutMs = READ_TIMEOUT_MS) { api.notifications() }
         return NotificationSettings(
             dto.motion, dto.sound, dto.offline, dto.reconnect, dto.importantOnly,
             dto.deviceAlerts.map { DeviceAlert(Mac.normalize(it.mac), it.enabled) }
@@ -317,7 +344,7 @@ class RemoteCloudStorageRepository @Inject constructor(
 
     override suspend fun get(): CloudStorageSettings {
         if (!enabled) throw FeatureDisabledError()
-        val dto = caller.call("저장소 설정 조회 실패") { api.storage() }
+        val dto = caller.call("저장소 설정 조회 실패", timeoutMs = READ_TIMEOUT_MS) { api.storage() }
         return CloudStorageSettings(
             autoSave = dto.autoSave, quality = CloudQuality.fromServer(dto.videoQuality),
             retentionDays = dto.retentionDays, totalGb = dto.totalGb, usedGb = dto.usedGb

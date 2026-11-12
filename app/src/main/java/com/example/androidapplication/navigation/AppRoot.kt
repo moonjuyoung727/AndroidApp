@@ -42,6 +42,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.androidapplication.core.common.KstTime
+import com.example.androidapplication.core.common.EVENT_POLL_MS
+import com.example.androidapplication.core.common.LocalPollGate
 import com.example.androidapplication.core.common.PollWhileStarted
 import com.example.androidapplication.core.data.EventTypes
 import com.example.androidapplication.core.designsystem.*
@@ -159,7 +161,11 @@ private fun MainShell(vm: ShellViewModel, snackbar: SnackbarHostState) {
     }
     LaunchedEffect(Unit) { vm.consentRequests.collect(consent::launch) }
 
-    PollWhileStarted(intervalMs = 30_000) { vm.refreshNotifications() }
+    PollWhileStarted(intervalMs = EVENT_POLL_MS, online = vm.vpnUsable) { vm.refreshNotifications() }
+    val owner = LocalLifecycleOwner.current
+    LaunchedEffect(owner) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.recheckVpnWhileOffline() }
+    }
     LaunchedEffect(Unit) { vm.loadSettings() }
 
     val actions = remember(vm) { VpnActions(reconnect = vm::reconnectVpn, showGuide = { guideOpen = true }) }
@@ -167,7 +173,7 @@ private fun MainShell(vm: ShellViewModel, snackbar: SnackbarHostState) {
     val isTab = destination != null && TABS.any { it.matches(destination) }
     val showBars = !chrome.hidden && !isVpnCheck && destination != null
 
-    CompositionLocalProvider(LocalVpnActions provides actions, LocalShellChrome provides chrome) {
+    CompositionLocalProvider(LocalVpnActions provides actions, LocalShellChrome provides chrome, LocalPollGate provides vm.vpnUsable) {
         Scaffold(
             containerColor = NeuBg,
             contentWindowInsets = if (chrome.hidden) WindowInsets(0) else WindowInsets.safeDrawing,
@@ -292,10 +298,8 @@ private fun AppNavHost(nav: NavHostController, modifier: Modifier, shell: ShellV
     NavHost(nav, startDestination = VpnCheckRoute, modifier = modifier.fillMaxSize()) {
         composable<VpnCheckRoute> {
             VpnCheckScreen(
-                onDone = { connected ->
-                    nav.navigate(DashboardRoute) { popUpTo(VpnCheckRoute) { inclusive = true } }
-                    if (!connected) nav.navigate(VpnManageRoute)
-                }
+                onConnected = { nav.navigate(DashboardRoute) { popUpTo(VpnCheckRoute) { inclusive = true } } },
+                onLogout = shell::logout
             )
         }
         composable<DashboardRoute> { DashboardScreen(nav) }

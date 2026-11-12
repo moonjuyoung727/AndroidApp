@@ -45,6 +45,7 @@ class ShellViewModel @Inject constructor(
 ) : ViewModel() {
     val auth: StateFlow<AuthState> = sessions.state
     val vpn = monitor.ui
+    val vpnUsable = monitor.usable
     val messages = bus.messages
 
     private val _notifications = MutableStateFlow(NotificationState())
@@ -81,16 +82,16 @@ class ShellViewModel @Inject constructor(
         }
     }
 
-    suspend fun refreshNotifications() {
-        try {
-            val page = eventRepository.list(EventQuery(size = 10, status = EventStatus.UNCONFIRMED))
-            _notifications.value = NotificationState(
-                unread = page.total,
-                recent = page.items.map { NotificationEntry(it.id, it.cameraName, it.type, it.occurredAt) }
-            )
-        } catch (_: AppError) {
-            // 자동 재조회의 실패는 알리지 않는다
-        }
+    suspend fun refreshNotifications(): Boolean = try {
+        val page = eventRepository.list(EventQuery(size = 10, status = EventStatus.UNCONFIRMED))
+        _notifications.value = NotificationState(
+            unread = page.total,
+            recent = page.items.map { NotificationEntry(it.id, it.cameraName, it.type, it.occurredAt) }
+        )
+        true
+    } catch (_: AppError) {
+        // 자동 재조회의 실패는 알리지 않는다. 15초 뒤 다시 받는다
+        false
     }
 
     fun reconnectVpn() {
@@ -105,6 +106,9 @@ class ShellViewModel @Inject constructor(
     fun onVpnConsentResult(granted: Boolean) {
         if (granted) reconnectVpn() else viewModelScope.launch { monitor.check() }
     }
+
+    /** VPN 끊김 동안 /status를 10초마다 확인한다. 호출한 쪽이 STARTED 동안만 돌린다. */
+    suspend fun recheckVpnWhileOffline() = monitor.recheckWhileOffline()
 
     fun dismissVpnBanner() = monitor.dismissBanner()
 

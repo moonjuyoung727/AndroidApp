@@ -115,9 +115,3 @@ object NetworkModule {
     @Provides @Singleton fun settingsApi(@Named("vpn") r: Retrofit): SettingsApi = r.create(SettingsApi::class.java)
     @Provides @Singleton fun subscriptionApi(@Named("vpn") r: Retrofit): SubscriptionApi = r.create(SubscriptionApi::class.java)
 }
-
-/** 디버그 빌드에서만 Fake 데이터로 전환할 수 있다. release 구현은 available = false. */
-interface DevOptions {
-    val available: Boolean
-    var useFake: Boolean
-}

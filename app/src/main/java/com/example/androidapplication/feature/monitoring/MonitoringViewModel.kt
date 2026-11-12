@@ -95,6 +95,11 @@ class MonitoringViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val _reconnecting = MutableStateFlow(false)
     val reconnecting = _reconnecting.asStateFlow()
+    private val _waitingVpn = MutableStateFlow(false)
+    val waitingVpn = _waitingVpn.asStateFlow()
+    private val _streamFailures = MutableStateFlow(0)
+    /** 연속 실패 횟수. [isStreamFailedOut]이면 '실패'로 표시한다. */
+    val streamFailures = _streamFailures.asStateFlow()
 
     private val _quality = MutableStateFlow(StreamQuality.Main)
     val quality = _quality.asStateFlow()
@@ -141,6 +146,8 @@ class MonitoringViewModel @Inject constructor(
                         closeSession(if (isStarted) "영상 연결이 종료되어 녹화를 저장했습니다." else "화면을 벗어나 녹화를 저장했습니다.")
                     }
                     _reconnecting.value = false
+                    _waitingVpn.value = false
+                    _streamFailures.value = 0
                     if (url != null && isStarted) {
                         keepStreaming(
                             open = {
@@ -150,7 +157,10 @@ class MonitoringViewModel @Inject constructor(
                                 }.state
                             },
                             release = { withContext(NonCancellable) { closeSession("영상 연결이 끊겨 녹화를 저장했습니다.") } },
-                            onRetry = { _reconnecting.value = true }
+                            onRetry = { _reconnecting.value = true },
+                            network = vpn.usable,
+                            onWaitingNetwork = { _waitingVpn.value = it },
+                            onFailures = { _streamFailures.value = it }
                         )
                     }
                 }
@@ -178,10 +188,11 @@ class MonitoringViewModel @Inject constructor(
         started.value = value
     }
 
-    suspend fun poll(first: Boolean) = try {
+    suspend fun poll(first: Boolean): Boolean = try {
         devices.refresh(silent = !first)
     } catch (e: AppError) {
         bus.showError(e, "카메라 목록 조회에 실패했습니다.")
+        false
     }
 
     fun refreshStream() = reloadKey.update { it + 1 }

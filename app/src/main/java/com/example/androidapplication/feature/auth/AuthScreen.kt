@@ -1,7 +1,5 @@
 package com.example.androidapplication.feature.auth
 
-import android.content.Context
-import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -16,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -25,7 +22,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.designsystem.*
-import kotlin.system.exitProcess
 
 @Composable
 fun AuthScreen(modifier: Modifier = Modifier, vm: AuthViewModel = hiltViewModel()) {
@@ -140,23 +136,7 @@ fun AuthScreen(modifier: Modifier = Modifier, vm: AuthViewModel = hiltViewModel(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             AuthMode.entries.filter { it != mode }.forEach { target -> TextAction(target.title, { switch(target) }, color = NeuMuted) }
         }
-
-        if (vm.devOptions.available) {
-            VerticalGap(24)
-            val context = LocalContext.current
-            Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                Text("개발자: Fake 데이터 사용  ", color = NeuMuted, style = MaterialTheme.typography.labelMedium)
-                Switch(vm.devOptions.useFake, { enabled -> vm.setFakeMode(enabled) { restartApp(context) } })
-            }
-        }
     }
-}
-
-private fun restartApp(context: Context) {
-    context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
-        context.startActivity(Intent.makeRestartActivityTask(it.component))
-    }
-    exitProcess(0)
 }
 
 /** 눈 버튼은 누르고 있는 동안만 비밀번호를 표시한다. */

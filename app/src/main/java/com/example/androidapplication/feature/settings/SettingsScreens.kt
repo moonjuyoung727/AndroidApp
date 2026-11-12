@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.common.Mac
+import com.example.androidapplication.core.common.POLL_RETRY_MS
 import com.example.androidapplication.core.common.PollWhileStarted
 import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.common.formatBytes
@@ -84,6 +85,7 @@ fun NotificationSettingsScreen(vm: NotificationSettingsViewModel = hiltViewModel
     val s by vm.server.collectAsStateWithLifecycle()
     val l by vm.localSettings.collectAsStateWithLifecycle()
     val cameras by vm.cameras.collectAsStateWithLifecycle()
+    PollWhileStarted(POLL_RETRY_MS, repeat = false, tick = vm::load)
     SettingsColumn {
         ListGroup {
             SettingToggle("푸시 알림", null, l.pushEnabled, { vm.updateLocal(l.copy(pushEnabled = it)) })
@@ -369,6 +371,7 @@ fun LoginSessionsScreen(vm: LoginSessionsViewModel = hiltViewModel()) {
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     var confirmOthers by rememberSaveable { mutableStateOf(false) }
+    PollWhileStarted(POLL_RETRY_MS, repeat = false, tick = vm::poll)
     SettingsColumn {
         if (sessions.isEmpty()) {
             EmptyState(Icons.Default.Devices, if (loading) "불러오는 중..." else "표시할 로그인 기기가 없습니다.")

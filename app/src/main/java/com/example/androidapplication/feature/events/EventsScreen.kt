@@ -28,13 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.navigation.NavHostController
 import coil3.compose.AsyncImage
+import com.example.androidapplication.core.common.EVENT_POLL_MS
 import com.example.androidapplication.core.common.KstTime
+import com.example.androidapplication.core.common.PollWhileStarted
 import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.data.EventItem
 import com.example.androidapplication.core.data.EventStatus
@@ -62,13 +63,10 @@ fun EventsScreen(nav: NavHostController, vm: EventsViewModel = hiltViewModel()) 
     var dateOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(filters.search.isNotEmpty()) }
     val listState = rememberLazyListState()
-    var resumed by remember { mutableStateOf(false) }
+    val general by vm.general.collectAsStateWithLifecycle()
 
-    LifecycleResumeEffect(Unit) {
-        if (resumed) vm.refreshLoaded()
-        resumed = true
-        onPauseOrDispose { }
-    }
+    // 30초마다 불러온 범위를 다시 받는다. 상세에서 돌아오면 바로 한 번 받는다
+    PollWhileStarted(EVENT_POLL_MS, repeat = general.autoRefresh, tick = vm::poll)
 
     val visible = remember(ui.items, filters.search) { ui.items.filter { it.matchesSearch(filters.search) } }
     val selecting = ui.selected.isNotEmpty()

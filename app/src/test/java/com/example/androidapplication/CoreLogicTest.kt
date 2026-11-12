@@ -6,6 +6,8 @@ import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.common.pollLoop
 import com.example.androidapplication.core.config.ApiConfig
 import com.example.androidapplication.core.data.Camera
+import com.example.androidapplication.core.common.AppError
+import com.example.androidapplication.core.data.LIST_LOAD_FAILED_MESSAGE
 import com.example.androidapplication.core.data.ListSource
 import com.example.androidapplication.core.data.ListStore
 import com.example.androidapplication.core.data.PrivacyZone
@@ -26,9 +28,11 @@ import com.example.androidapplication.core.network.AppJson
 import com.example.androidapplication.core.network.PrivacyZoneDto
 import com.example.androidapplication.core.network.ZoneCoordinatesDto
 import com.example.androidapplication.core.vpn.isClientVpnConnected
+import com.example.androidapplication.core.vpn.recheckWhileOffline
 import com.example.androidapplication.core.webrtc.ServerStreamUrlResolver
 import com.example.androidapplication.core.webrtc.StreamQuality
 import com.example.androidapplication.core.webrtc.StreamState
+import com.example.androidapplication.core.webrtc.isStreamFailedOut
 import com.example.androidapplication.core.webrtc.keepStreaming
 import com.example.androidapplication.core.webrtc.mapPeerState
 import com.example.androidapplication.core.webrtc.reconnectDelayMs
@@ -40,6 +44,7 @@ import com.example.androidapplication.feature.settings.ZoneDraft
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -120,12 +125,15 @@ class ValidatorsTest {
     @Test fun password_rules() {
         assertNull(Validators.password("Abcd123!"))
         assertNotNull(Validators.password("short1!"))
-        assertNotNull(Validators.password("한글비밀번호입니다"))
-        assertNotNull(Validators.password("a".repeat(65)))
+        assertNull(Validators.password("한글 비밀번호~입니다"))
+        assertNull(Validators.password("a".repeat(128)))
+        assertNotNull(Validators.password("a".repeat(129)))
     }
 
-    @Test fun password_input_blocks_disallowed_chars() =
-        assertEquals("abc!1", Validators.filterPasswordInput("a b한c!1~"))
+    @Test fun password_input_only_limits_length() {
+        assertEquals("a b한c!1~", Validators.filterPasswordInput("a b한c!1~"))
+        assertEquals(128, Validators.filterPasswordInput("a".repeat(200)).length)
+    }
 
     @Test fun confirm() {
         assertNull(Validators.passwordConfirm("a", "a"))
@@ -364,6 +372,42 @@ class VpnAndStreamTest {
         assertEquals(listOf(StreamQuality.Main, StreamQuality.Sub), resolver.qualities(noStreams))
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun keep_streaming_waits_while_vpn_is_down() = runTest {
+        val vpnUsable = MutableStateFlow(false)
+        val sessions = mutableListOf<MutableStateFlow<StreamState>>()
+        val waiting = mutableListOf<Boolean>()
+        val job = launch {
+            keepStreaming(
+                open = { MutableStateFlow<StreamState>(StreamState.Connecting).also(sessions::add) },
+                release = {},
+                onRetry = {},
+                network = vpnUsable,
+                onWaitingNetwork = { waiting += it }
+            )
+        }
+        runCurrent()
+        assertEquals(0, sessions.size)
+        assertEquals(listOf(true), waiting)
+
+        vpnUsable.value = true
+        runCurrent()
+        assertEquals(1, sessions.size)
+        assertEquals(listOf(true, false), waiting)
+
+        // 재연결 대기 중에 VPN이 끊기면 다음 시도도 VPN 복구까지 미룬다
+        vpnUsable.value = false
+        sessions.last().value = StreamState.Failed
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, sessions.size)
+
+        vpnUsable.value = true
+        runCurrent()
+        assertEquals(2, sessions.size)
+        job.cancel()
+    }
+
     @Test fun reconnect_delay_grows_to_ten_seconds() {
         assertEquals(listOf(2_000L, 4_000L, 8_000L, 10_000L, 10_000L), (0..4).map(::reconnectDelayMs))
     }
@@ -410,6 +454,48 @@ class VpnAndStreamTest {
         job.cancel()
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun stream_shows_failed_after_five_consecutive_failures() = runTest {
+        val sessions = mutableListOf<MutableStateFlow<StreamState>>()
+        val failures = mutableListOf<Int>()
+        val vpnUsable = MutableStateFlow(true)
+        val job = launch {
+            keepStreaming(
+                open = { MutableStateFlow<StreamState>(StreamState.Connecting).also(sessions::add) },
+                release = {},
+                onRetry = {},
+                network = vpnUsable,
+                onFailures = { failures += it }
+            )
+        }
+        suspend fun fail() {
+            sessions.last().value = StreamState.Failed
+            advanceTimeBy(10_000)
+            runCurrent()
+        }
+        runCurrent()
+        repeat(4) { fail() }
+        assertFalse(isStreamFailedOut(failures.last()))
+        fail()
+        assertTrue(isStreamFailedOut(failures.last()))
+        assertEquals(6, sessions.size) // 실패로 표시해도 재시도는 계속한다
+
+        // 재생에 성공하면 처음부터 센다
+        sessions.last().value = StreamState.Connected
+        runCurrent()
+        assertEquals(0, failures.last())
+
+        // VPN 끊김 중의 실패는 회복 후 다시 센다
+        repeat(5) { fail() }
+        vpnUsable.value = false
+        fail()
+        assertEquals(6, failures.last())
+        vpnUsable.value = true
+        runCurrent()
+        assertEquals(0, failures.last())
+        job.cancel()
+    }
+
     @Test fun layouts_follow_orientation() {
         assertEquals(2 to 1, channelLayout(2, landscape = true))
         assertEquals(1 to 2, channelLayout(2, landscape = false))
@@ -444,6 +530,7 @@ class PollingTest {
             pollLoop(5_000, repeat = true) { first ->
                 calls += testScheduler.currentTime
                 if (first) gate.await() // 첫 요청이 오래 걸린다
+                true
             }
         }
         advanceTimeBy(20_000)
@@ -457,10 +544,184 @@ class PollingTest {
         job.cancel()
     }
 
+    @Test fun vpn_offline_pauses_auto_polls_and_recovery_polls_immediately() = runTest {
+        val online = MutableStateFlow(false)
+        val calls = mutableListOf<Pair<Long, Boolean>>()
+        val job = launch {
+            pollLoop(5_000, repeat = true, online = online) { first -> calls += testScheduler.currentTime to first; true }
+        }
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(listOf(0L to true), calls) // 첫 조회만 보내고 반복 조회는 멈춘다
+        online.value = true
+        runCurrent()
+        assertEquals(listOf(0L to true, 30_000L to false), calls) // 다음 주기를 기다리지 않는다
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(35_000L to false, calls.last())
+        job.cancel()
+    }
+
+    @Test fun vpn_recheck_runs_every_10s_only_while_offline() = runTest {
+        val usable = MutableStateFlow(true)
+        val checks = mutableListOf<Long>()
+        val job = launch { recheckWhileOffline(usable) { checks += testScheduler.currentTime } }
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(checks.isEmpty())
+        usable.value = false
+        runCurrent()
+        advanceTimeBy(25_000)
+        runCurrent()
+        assertEquals(listOf(40_000L, 50_000L), checks)
+        usable.value = true
+        runCurrent()
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(2, checks.size) // 회복되면 멈춘다
+        job.cancel()
+    }
+
     @Test fun disabled_auto_refresh_polls_once() = runTest {
         var count = 0
-        pollLoop(5_000, repeat = false) { count++ }
+        pollLoop(5_000, repeat = false) { count++; true }
         assertEquals(1, count)
+    }
+
+    @Test fun disabled_auto_refresh_polls_once_more_after_vpn_recovery() = runTest {
+        val online = MutableStateFlow(true)
+        val calls = mutableListOf<Pair<Long, Boolean>>()
+        val job = launch {
+            pollLoop(5_000, repeat = false, online = online) { first -> calls += testScheduler.currentTime to first; true }
+        }
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(listOf(0L to true), calls) // 켜져 있지 않으면 반복하지 않는다
+        online.value = false
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals(1, calls.size) // 끊긴 동안은 보내지 않는다
+        online.value = true
+        runCurrent()
+        assertEquals(listOf(0L to true, 40_000L to false), calls) // 복구되면 바로 한 번
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(2, calls.size) // 그 뒤로는 다시 멈춘다
+        job.cancel()
+    }
+
+    @Test fun disabled_auto_refresh_entered_while_offline_polls_on_recovery() = runTest {
+        val online = MutableStateFlow(false)
+        val calls = mutableListOf<Long>()
+        val job = launch { pollLoop(5_000, repeat = false, online = online) { calls += testScheduler.currentTime; true } }
+        advanceTimeBy(20_000)
+        runCurrent()
+        assertEquals(listOf(0L), calls) // 진입 시 첫 조회는 VPN과 상관없이 보낸다
+        online.value = true
+        runCurrent()
+        assertEquals(listOf(0L, 20_000L), calls)
+        job.cancel()
+    }
+
+    @Test fun failed_poll_retries_after_15s_then_returns_to_interval() = runTest {
+        val calls = mutableListOf<Long>()
+        val results = ArrayDeque(listOf(true, false, false, true))
+        val job = launch {
+            pollLoop(5_000, repeat = true) {
+                calls += testScheduler.currentTime
+                results.removeFirstOrNull() ?: true
+            }
+        }
+        advanceTimeBy(45_001)
+        runCurrent()
+        // 성공 → 5초, 실패 → 15초, 실패 → 15초, 성공 → 5초
+        assertEquals(listOf(0L, 5_000L, 20_000L, 35_000L, 40_000L, 45_000L), calls)
+        job.cancel()
+    }
+
+    @Test fun failed_retry_waits_for_vpn_then_runs_immediately() = runTest {
+        val online = MutableStateFlow(true)
+        val calls = mutableListOf<Long>()
+        val job = launch {
+            pollLoop(5_000, repeat = true, online = online) { calls += testScheduler.currentTime; calls.size > 1 }
+        }
+        runCurrent()
+        online.value = false // 실패 A: VPN 끊김
+        advanceTimeBy(40_000)
+        runCurrent()
+        assertEquals(listOf(0L), calls)
+        online.value = true
+        runCurrent()
+        assertEquals(listOf(0L, 40_000L), calls)
+        job.cancel()
+    }
+
+    @Test fun auto_refresh_failed_retry_cut_short_by_vpn_recovery() = runTest {
+        val online = MutableStateFlow(true)
+        val calls = mutableListOf<Pair<Long, Boolean>>()
+        val job = launch {
+            pollLoop(5_000, repeat = true, online = online) { first -> calls += testScheduler.currentTime to first; calls.size > 1 }
+        }
+        runCurrent() // 첫 조회 실패, 15초 재시도 대기 시작
+        advanceTimeBy(2_000)
+        online.value = false
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(listOf(0L to true), calls)
+        online.value = true // 4초에 복구
+        runCurrent()
+        assertEquals(listOf(0L to true, 4_000L to false), calls) // 15초를 기다리지 않는다
+        advanceTimeBy(5_001)
+        runCurrent()
+        assertEquals(9_000L to false, calls.last()) // 성공 뒤에는 원래 주기로
+        job.cancel()
+    }
+
+    @Test fun one_shot_failed_retry_cut_short_by_vpn_recovery() = runTest {
+        val online = MutableStateFlow(false)
+        val calls = mutableListOf<Long>()
+        val job = launch {
+            pollLoop(5_000, repeat = false, online = online) { calls += testScheduler.currentTime; calls.size > 1 }
+        }
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(listOf(0L), calls) // 끊긴 상태에서 첫 조회 실패
+        online.value = true // 3초에 복구
+        runCurrent()
+        assertEquals(listOf(0L, 3_000L), calls) // 아직 못 불러왔으니 바로 조회
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(2, calls.size) // 성공한 뒤에는 멈춘다
+        job.cancel()
+    }
+
+    @Test fun failed_retry_without_vpn_change_still_waits_15s() = runTest {
+        val online = MutableStateFlow(true)
+        val calls = mutableListOf<Long>()
+        val job = launch {
+            pollLoop(5_000, repeat = false, online = online) { calls += testScheduler.currentTime; calls.size > 1 }
+        }
+        advanceTimeBy(15_001)
+        runCurrent()
+        assertEquals(listOf(0L, 15_000L), calls)
+        job.cancel()
+    }
+
+    @Test fun one_shot_poll_retries_every_15s_until_success() = runTest {
+        val calls = mutableListOf<Long>()
+        pollLoop(5_000, repeat = false) { calls += testScheduler.currentTime; calls.size == 3 }
+        assertEquals(listOf(0L, 15_000L, 30_000L), calls)
+    }
+
+    @Test fun forced_refresh_cancels_in_flight_fetch() = runTest {
+        val store = ListStore<Int>()
+        val stale = async { store.refresh { awaitCancellation() } }
+        runCurrent()
+        store.refresh(force = true) { listOf(2) }
+        stale.await() // 밀려난 호출은 오류 없이 끝난다
+        assertEquals(listOf(2), store.state.value.items)
+        assertEquals(ListSource.Server, store.state.value.source)
+        assertFalse(store.state.value.isFetching)
     }
 
     @Test fun overlapping_refresh_is_skipped() = runTest {
@@ -484,5 +745,18 @@ class PollingTest {
         assertEquals(ListSource.Stale, store.state.value.source)
         assertEquals(listOf(1), store.state.value.items)
         assertFalse(store.state.value.isFetching)
+        assertEquals(LIST_LOAD_FAILED_MESSAGE, store.state.value.error)
+    }
+
+    @Test fun failure_before_any_data_is_error_with_message() = runTest {
+        val store = ListStore<Int>()
+        runCatching { store.refresh { throw AppError("VPN 연결을 확인하세요.") } }
+        assertEquals(ListSource.Error, store.state.value.source)
+        assertEquals("VPN 연결을 확인하세요.", store.state.value.error)
+        assertTrue(store.state.value.items.isEmpty())
+
+        store.refresh { listOf(1) }
+        assertEquals(ListSource.Server, store.state.value.source)
+        assertNull(store.state.value.error)
     }
 }

@@ -3,6 +3,10 @@ package com.example.androidapplication.core.data
 import com.example.androidapplication.core.common.ApiError
 import com.example.androidapplication.core.common.AppError
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,36 +40,64 @@ data class DeviceStatus(val uptimeSeconds: Long?, val lastHandshake: String?)
 enum class ListSource(val label: String) {
     Loading("불러오는 중"),
     Server("서버 데이터"),
-    Stale("이전 데이터")
+    /** 받은 적이 있는데 마지막 조회가 실패했다. 이전 데이터를 계속 보여 준다. */
+    Stale("이전 데이터"),
+    /** 한 번도 받지 못하고 실패했다. 빈 목록을 '없음'으로 안내하면 안 된다. */
+    Error("불러오지 못함")
 }
 
 data class ListState<T>(
     val items: List<T> = emptyList(),
     val source: ListSource = ListSource.Loading,
     val fetchedAt: Instant? = null,
-    val isFetching: Boolean = false
+    val isFetching: Boolean = false,
+    /** Stale·Error일 때 마지막 실패 사유. */
+    val error: String? = null
 )
 
-/** 목록을 화면끼리 공유한다. 조회가 진행 중이면 새 조회를 건너뛰어 요청이 겹치지 않게 한다. */
+const val LIST_LOAD_FAILED_MESSAGE = "목록을 불러오지 못했습니다."
+
+/**
+ * 목록을 화면끼리 공유한다. 조회가 진행 중이면 새 조회를 건너뛰어 요청이 겹치지 않게 한다.
+ * [force]는 진행 중인 조회를 끊고 바로 다시 받는다 (등록·수정 직후, 새로고침 버튼).
+ * 끊긴 쪽 호출은 오류 없이 끝나고, 목록은 새 조회 결과를 따른다.
+ */
 class ListStore<T> {
     private val _state = MutableStateFlow(ListState<T>())
     val state: StateFlow<ListState<T>> = _state.asStateFlow()
-    private val inFlight = AtomicBoolean(false)
+    private val lock = Any()
+    private var current: Deferred<List<T>>? = null
 
-    suspend fun refresh(fetch: suspend () -> List<T>) {
-        if (!inFlight.compareAndSet(false, true)) return
+    suspend fun refresh(force: Boolean = false, fetch: suspend () -> List<T>): Unit = coroutineScope {
+        val task = synchronized(lock) {
+            val running = current
+            if (running != null && running.isActive) {
+                if (!force) return@coroutineScope
+                running.cancel()
+            }
+            async { fetch() }.also { current = it }
+        }
         _state.update { it.copy(isFetching = true) }
         try {
-            val items = fetch()
-            _state.update { it.copy(items = items, source = ListSource.Server, fetchedAt = Instant.now()) }
+            val items = task.await()
+            _state.update { it.copy(items = items, source = ListSource.Server, fetchedAt = Instant.now(), error = null) }
         } catch (e: CancellationException) {
+            // 강제 새로고침에 밀려난 조회. 호출한 쪽은 살아 있으므로 조용히 끝낸다
+            if (task.isCancelled && isActive) return@coroutineScope
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(source = ListSource.Stale) }
+            val message = (e as? AppError)?.message ?: LIST_LOAD_FAILED_MESSAGE
+            _state.update {
+                it.copy(source = if (it.fetchedAt == null) ListSource.Error else ListSource.Stale, error = message)
+            }
             throw e
         } finally {
-            inFlight.set(false)
-            _state.update { it.copy(isFetching = false) }
+            synchronized(lock) {
+                if (current === task) {
+                    current = null
+                    _state.update { it.copy(isFetching = false) }
+                }
+            }
         }
     }
 
@@ -76,12 +108,14 @@ class ListStore<T> {
     }
 }
 
-/** 자동 재조회의 실패는 Snackbar를 띄우지 않는다. */
-inline fun silentlyIf(silent: Boolean, block: () -> Unit) {
+/** 자동 재조회의 실패는 Snackbar를 띄우지 않는다. 성공하면 true, [silent]로 삼킨 실패면 false. */
+inline fun silentlyIf(silent: Boolean, block: () -> Unit): Boolean {
     try {
         block()
+        return true
     } catch (e: AppError) {
         if (!silent) throw e
+        return false
     }
 }
 

@@ -26,6 +26,7 @@ import com.example.androidapplication.core.common.Mac
 import com.example.androidapplication.core.common.PollWhileStarted
 import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.data.Camera
+import com.example.androidapplication.core.data.ListSource
 import com.example.androidapplication.core.designsystem.*
 import com.example.androidapplication.navigation.MonitoringRoute
 
@@ -48,7 +49,7 @@ fun DevicesScreen(nav: NavHostController, vm: DevicesViewModel = hiltViewModel()
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
                     BigNumber("${state.items.size}", "대", style = MaterialTheme.typography.headlineLarge)
-                    DataFreshness(state.source, state.fetchedAt)
+                    DataFreshness(state)
                 }
                 CircleIconButton(Icons.Default.Refresh, "새로고침", vm::refresh)
                 CircleIconButton(Icons.Default.Add, "카메라 등록", { vm.clearRegisterError(); sheetOpen = true })
@@ -56,10 +57,15 @@ fun DevicesScreen(nav: NavHostController, vm: DevicesViewModel = hiltViewModel()
         }
         if (state.items.isEmpty()) {
             item {
+                val failed = state.source == ListSource.Error
                 EmptyState(
                     Icons.Default.Videocam,
-                    if (state.isFetching) "불러오는 중..." else "등록된 카메라가 없습니다.",
-                    "카메라를 등록하거나 VPN과 서버 연결을 확인해 주세요."
+                    when {
+                        state.isFetching -> "불러오는 중..."
+                        failed -> "카메라 목록을 불러오지 못했습니다."
+                        else -> "등록된 카메라가 없습니다."
+                    },
+                    if (failed) state.error ?: "VPN과 서버 연결을 확인해 주세요." else "카메라를 등록하거나 VPN과 서버 연결을 확인해 주세요."
                 )
             }
         } else item {
@@ -67,7 +73,7 @@ fun DevicesScreen(nav: NavHostController, vm: DevicesViewModel = hiltViewModel()
                 state.items.forEachIndexed { index, camera ->
                     ListRow(
                         title = camera.name.ifBlank { camera.deviceId },
-                        subtitle = "${camera.location.ifBlank { Validators.LOCATION_DEFAULT }} · ${KstTime.formatLastSeen(camera.lastSeen)}",
+                        subtitle = "위치 ${camera.location.ifBlank { Validators.LOCATION_DEFAULT }}\n마지막 수신 ${KstTime.formatLastSeen(camera.lastSeen)}",
                         divider = index != state.items.lastIndex,
                         onClick = { nav.navigate(MonitoringRoute(camera.mac)) },
                         trailing = {
@@ -86,6 +92,7 @@ fun DevicesScreen(nav: NavHostController, vm: DevicesViewModel = hiltViewModel()
         CleanSheet(onDismiss = { detailMac = null }, title = camera.name.ifBlank { camera.deviceId }) {
             InfoRow("MAC", Mac.format(camera.mac))
             InfoRow("위치", camera.location.ifBlank { Validators.LOCATION_DEFAULT })
+            InfoRow("상태", if (camera.isOnline) "온라인" else "오프라인")
             InfoRow("마지막 수신", KstTime.formatLastSeen(camera.lastSeen))
             VerticalGap(14)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

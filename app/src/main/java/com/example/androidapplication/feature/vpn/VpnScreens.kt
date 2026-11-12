@@ -1,8 +1,5 @@
 package com.example.androidapplication.feature.vpn
 
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -30,23 +28,20 @@ import com.example.androidapplication.core.common.PollWhileStarted
 import com.example.androidapplication.core.common.UiMessageBus
 import com.example.androidapplication.core.common.VPN_CHECK_MESSAGE
 import com.example.androidapplication.core.config.ApiConfig
+import com.example.androidapplication.core.data.ListSource
 import com.example.androidapplication.core.data.RecoveryState
 import com.example.androidapplication.core.data.SettingsRepository
 import com.example.androidapplication.core.data.VpnDevice
 import com.example.androidapplication.core.data.VpnRepository
 import com.example.androidapplication.core.data.VpnStatusText
 import com.example.androidapplication.core.designsystem.*
-import com.example.androidapplication.core.vpn.ClientVpnConnector
 import com.example.androidapplication.core.vpn.ClientVpnState
-import com.example.androidapplication.core.vpn.ConnectOutcome
 import com.example.androidapplication.core.vpn.VpnMonitor
 import com.example.androidapplication.core.vpn.WireGuardApp
 import com.example.androidapplication.navigation.LocalVpnActions
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -57,52 +52,64 @@ fun clientVpnColor(state: ClientVpnState) = when (state) {
     ClientVpnState.Disconnected -> NeuMuted
 }
 
+const val VPN_CONNECT_GUIDE = "WireGuard 앱에서 VPN을 연결한 뒤 다시 시도하세요"
+
+enum class VpnCheckState { Checking, Connected, Failed }
+
+/** I2: 폰은 WireGuard 공식 앱으로 연결한다. 앱은 GET status로 연결 여부만 확인한다. */
 @HiltViewModel
-class VpnCheckViewModel @Inject constructor(private val connector: ClientVpnConnector) : ViewModel() {
-    private val _result = MutableStateFlow<Boolean?>(null)
-    val result = _result.asStateFlow()
-    private val consentChannel = Channel<android.content.Intent>(Channel.CONFLATED)
-    val consent = consentChannel.receiveAsFlow()
+class VpnCheckViewModel @Inject constructor(private val monitor: VpnMonitor) : ViewModel() {
+    private val _state = MutableStateFlow(VpnCheckState.Checking)
+    val state = _state.asStateFlow()
     private var started = false
+    private var running = false
 
     fun start() {
         if (started) return
         started = true
-        run()
+        check()
     }
 
-    fun run() {
+    fun check() {
+        if (running) return
+        running = true
+        _state.value = VpnCheckState.Checking
         viewModelScope.launch {
-            when (val outcome = connector.connectAndCheck()) {
-                ConnectOutcome.Connected -> _result.value = true
-                ConnectOutcome.Failed -> _result.value = false
-                is ConnectOutcome.NeedsConsent -> consentChannel.trySend(outcome.intent)
+            try {
+                _state.value = if (monitor.check()) VpnCheckState.Connected else VpnCheckState.Failed
+            } finally {
+                running = false
             }
         }
     }
-
-    fun onConsentDenied() {
-        _result.value = false
-    }
 }
 
-/** 로그인 성공 또는 저장된 세션 → VPN 확인 → 성공 시 대시보드, 실패 시 VPN 연결 관리. */
+/** 로그인 성공 또는 저장된 세션 → GET status → 연결되면 대시보드, 아니면 WireGuard 앱 연결 안내. */
 @Composable
-fun VpnCheckScreen(onDone: (Boolean) -> Unit, vm: VpnCheckViewModel = hiltViewModel()) {
-    val result by vm.result.collectAsStateWithLifecycle()
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (it.resultCode == Activity.RESULT_OK) vm.run() else vm.onConsentDenied()
-    }
-    LaunchedEffect(Unit) {
-        vm.start()
-        vm.consent.collect(launcher::launch)
-    }
-    LaunchedEffect(result) { result?.let(onDone) }
+fun VpnCheckScreen(onConnected: () -> Unit, onLogout: () -> Unit, vm: VpnCheckViewModel = hiltViewModel()) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { vm.start() }
+    LaunchedEffect(state) { if (state == VpnCheckState.Connected) onConnected() }
 
     FullScreenMessage {
-        CircularProgressIndicator(color = NeuAccent, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
-        VerticalGap(20)
-        Text("VPN 연결 확인 중", style = MaterialTheme.typography.titleLarge)
+        if (state == VpnCheckState.Failed) {
+            Icon(Icons.Default.WifiOff, null, Modifier.size(40.dp), tint = NeuMuted)
+            VerticalGap(20)
+            Text(VPN_CONNECT_GUIDE, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            VerticalGap(16)
+            // 안내 문구가 주가 되도록 버튼은 작은 글자 버튼으로 둔다
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextAction("다시 시도", vm::check, color = NeuMuted)
+                TextAction("WireGuard 앱 열기", { WireGuardApp.open(context) }, color = NeuMuted)
+            }
+            // VPN을 연결할 수 없을 때 다른 계정으로 바꾸거나 빠져나갈 수 있게 둔다
+            TextAction("로그아웃", onLogout, color = NeuMuted.copy(alpha = 0.7f))
+        } else {
+            CircularProgressIndicator(color = NeuAccent, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
+            VerticalGap(20)
+            Text("VPN 연결 확인 중", style = MaterialTheme.typography.titleLarge)
+        }
     }
 }
 
@@ -152,10 +159,11 @@ class VpnManageViewModel @Inject constructor(
     val client = monitor.ui
     val general = settings.general
 
-    suspend fun poll(first: Boolean) = try {
+    suspend fun poll(first: Boolean): Boolean = try {
         repository.refresh(silent = !first)
     } catch (e: AppError) {
         bus.showError(e, "VPN 장치 목록 조회 실패")
+        false
     }
 
     fun refresh() {
@@ -241,10 +249,19 @@ fun VpnManageScreen(vm: VpnManageViewModel = hiltViewModel()) {
         }
         if (filtered.isEmpty()) {
             item {
+                val failed = state.source == ListSource.Error
                 EmptyState(
                     Icons.Default.WifiOff,
-                    if (items.isEmpty()) "표시할 VPN 연결이 없습니다." else "조건에 맞는 기기가 없습니다.",
-                    if (items.isEmpty()) "서버에 연결되어 있는지 확인해 주세요." else null
+                    when {
+                        failed -> "VPN 연결 목록을 불러오지 못했습니다."
+                        items.isEmpty() -> "표시할 VPN 연결이 없습니다."
+                        else -> "조건에 맞는 기기가 없습니다."
+                    },
+                    when {
+                        failed -> state.error ?: "서버에 연결되어 있는지 확인해 주세요."
+                        items.isEmpty() -> "서버에 연결되어 있는지 확인해 주세요."
+                        else -> null
+                    }
                 )
             }
         } else item {
@@ -263,7 +280,7 @@ fun VpnManageScreen(vm: VpnManageViewModel = hiltViewModel()) {
                 }
             }
         }
-        item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DataFreshness(state.source, state.fetchedAt) } }
+        item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DataFreshness(state) } }
     }
 
     val selected = items.firstOrNull { it.mac == selectedMac }

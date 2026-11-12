@@ -30,12 +30,15 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import coil3.compose.AsyncImage
 import com.example.androidapplication.core.common.DASHBOARD_POLL_MS
+import com.example.androidapplication.core.common.EVENT_POLL_MS
 import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.common.PollWhileStarted
+import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.data.Camera
 import com.example.androidapplication.core.data.EventItem
 import com.example.androidapplication.core.data.EventStatus
 import com.example.androidapplication.core.data.EventTypes
+import com.example.androidapplication.core.data.ListSource
 import com.example.androidapplication.core.data.VpnStatusText
 import com.example.androidapplication.core.designsystem.*
 import com.example.androidapplication.core.media.MediaUrls
@@ -59,6 +62,7 @@ fun DashboardScreen(nav: NavHostController, vm: DashboardViewModel = hiltViewMod
     var vpnOpen by rememberSaveable { mutableStateOf(false) }
 
     PollWhileStarted(DASHBOARD_POLL_MS, repeat = general.autoRefresh, tick = vm::poll)
+    PollWhileStarted(EVENT_POLL_MS, repeat = general.autoRefresh, tick = vm::pollEvents)
 
     val cameras = cameraState.items
     val online = cameras.count(Camera::isOnline)
@@ -118,7 +122,7 @@ fun DashboardScreen(nav: NavHostController, vm: DashboardViewModel = hiltViewMod
             }
         }
 
-        item { CameraStrip(if (general.showOfflineBoards) cameras else cameras.filter(Camera::isOnline), nav) }
+        item { CameraStrip(if (general.showOfflineBoards) cameras else cameras.filter(Camera::isOnline), cameraState.source == ListSource.Error, nav) }
 
         item {
             NeuCard(Modifier.fillMaxWidth()) {
@@ -156,8 +160,8 @@ fun DashboardScreen(nav: NavHostController, vm: DashboardViewModel = hiltViewMod
         }
 
         item {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DataFreshness(cameraState.source, cameraState.fetchedAt) }
-            if (cameras.isEmpty() && cameraState.fetchedAt == null && !cameraState.isFetching) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DataFreshness(cameraState) }
+            if (cameraState.source == ListSource.Error && !cameraState.isFetching) {
                 VerticalGap(8)
                 NoticeBox("서버에서 카메라 목록을 받지 못했습니다. VPN과 서버 연결을 확인해 주세요.", color = NeuWarning)
             }
@@ -208,7 +212,7 @@ private fun EventTypeSummary(counts: Map<String, Int>) {
 }
 
 @Composable
-private fun CameraStrip(cameras: List<Camera>, nav: NavHostController) {
+private fun CameraStrip(cameras: List<Camera>, failed: Boolean, nav: NavHostController) {
     NeuCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 20.dp)) {
         Row(
             Modifier.fillMaxWidth().clickable { nav.switchTab(MultiviewRoute()) }.padding(horizontal = 20.dp),
@@ -219,7 +223,7 @@ private fun CameraStrip(cameras: List<Camera>, nav: NavHostController) {
         }
         VerticalGap(12)
         if (cameras.isEmpty()) {
-            Text("등록된 카메라가 없습니다.", Modifier.padding(horizontal = 20.dp), color = NeuMuted, style = MaterialTheme.typography.bodySmall)
+            Text(if (failed) "카메라 목록을 불러오지 못했습니다." else "등록된 카메라가 없습니다.", Modifier.padding(horizontal = 20.dp), color = NeuMuted, style = MaterialTheme.typography.bodySmall)
         } else {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(cameras, key = { it.mac }) { camera ->
@@ -232,8 +236,15 @@ private fun CameraStrip(cameras: List<Camera>, nav: NavHostController) {
                                 Icon(Icons.Default.VideocamOff, null, tint = NeuMuted.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
                             }
                         }
+                        // 요약: 이름(없으면 -), 위치, online/offline. 자세한 정보는 기기 관리 화면에서 본다
                         VerticalGap(8)
-                        StatusPill(camera.name.ifBlank { camera.deviceId }, if (camera.isOnline) NeuSuccess else NeuMuted)
+                        Text(camera.name.ifBlank { "-" }, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            camera.location.ifBlank { Validators.LOCATION_DEFAULT },
+                            color = NeuMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        VerticalGap(4)
+                        StatusPill(if (camera.isOnline) "온라인" else "오프라인", if (camera.isOnline) NeuSuccess else NeuMuted)
                     }
                 }
             }

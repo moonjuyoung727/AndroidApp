@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.data.ListSource
+import com.example.androidapplication.core.data.ListState
 import java.time.Instant
 
 /** 화면 좌우 여백. */
@@ -466,14 +467,17 @@ fun NoticeBox(text: String, modifier: Modifier = Modifier, color: Color = NeuMut
 
 /** 조회 상태와 마지막 갱신 시각. */
 @Composable
-fun DataFreshness(source: ListSource, fetchedAt: Instant?, modifier: Modifier = Modifier) {
-    val time = fetchedAt?.let(KstTime::time)
-    val text = when {
-        source == ListSource.Loading && time == null -> source.label
-        source == ListSource.Stale -> "${source.label}${time?.let { " · $it" } ?: ""}"
-        else -> "${source.label} · $time"
+fun DataFreshness(state: ListState<*>, modifier: Modifier = Modifier) {
+    val source = state.source
+    val time = state.fetchedAt?.let(KstTime::time)
+    val text = when (source) {
+        ListSource.Loading -> if (time == null) source.label else "${source.label} · $time"
+        ListSource.Server -> "${source.label} · $time"
+        ListSource.Stale -> "${source.label}${time?.let { " · $it" } ?: ""}"
+        ListSource.Error -> state.error ?: source.label
     }
-    Text(text, modifier, color = if (source == ListSource.Stale) NeuWarning else NeuMuted.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
+    val warn = source == ListSource.Stale || source == ListSource.Error
+    Text(text, modifier, color = if (warn) NeuWarning else NeuMuted.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
 }
 
 @Composable

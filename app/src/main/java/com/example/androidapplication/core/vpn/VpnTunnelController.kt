@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.common.ApiErrorCode
 import com.example.androidapplication.core.config.ApiConfig
 import com.example.androidapplication.core.config.FeatureFlags
 import com.example.androidapplication.core.network.ApiCaller
@@ -54,12 +55,6 @@ sealed interface TunnelResult {
 interface VpnTunnelController {
     suspend fun ensureUp(): TunnelResult
     suspend fun down()
-}
-
-/** 앱이 터널을 직접 켜지 않는 구현 (디버그 Fake 또는 플래그 꺼짐). */
-class NoOpTunnelController @Inject constructor() : VpnTunnelController {
-    override suspend fun ensureUp(): TunnelResult = TunnelResult.Unavailable(null)
-    override suspend fun down() = Unit
 }
 
 /**
@@ -115,7 +110,7 @@ class EmbeddedWireGuardController @Inject constructor(
                 api.registerVpnClient(VpnClientRegisterRequest(keys.publicKey.toBase64(), clientName()))
             }
         } catch (e: ApiError) {
-            if (e.status == 404) return null // 서버에 등록 API가 아직 없다
+            if (e.kind == ApiErrorCode.NOT_FOUND) return null // 서버에 등록 API가 아직 없다
             throw e
         }
         val peer = response.toSavedPeer() ?: return null

@@ -40,6 +40,7 @@ import com.example.androidapplication.core.data.VpnStatusText
 import com.example.androidapplication.core.designsystem.*
 import com.example.androidapplication.core.webrtc.StreamState
 import com.example.androidapplication.core.webrtc.VideoLayer
+import com.example.androidapplication.core.webrtc.isStreamFailedOut
 import com.example.androidapplication.feature.devices.RenameDialog
 import com.example.androidapplication.navigation.CameraSettingsRoute
 import com.example.androidapplication.navigation.LocalShellChrome
@@ -86,7 +87,15 @@ fun MonitoringScreen(nav: NavHostController, vm: MonitoringViewModel = hiltViewM
     val current = camera
     if (current == null) {
         FullScreenMessage {
-            Text(if (list.source == ListSource.Loading) "카메라 정보를 불러오는 중..." else "찾을 수 없는 카메라입니다.", color = NeuMuted)
+            Text(
+                when (list.source) {
+                    ListSource.Loading -> "카메라 정보를 불러오는 중..."
+                    ListSource.Error -> "카메라 정보를 불러오지 못했습니다.\n${list.error ?: "VPN과 서버 연결을 확인해 주세요."}"
+                    else -> "찾을 수 없는 카메라입니다."
+                },
+                color = NeuMuted,
+                textAlign = TextAlign.Center
+            )
         }
         return
     }
@@ -140,6 +149,8 @@ private fun VideoStage(vm: MonitoringViewModel, camera: Camera, modifier: Modifi
     val session by vm.session.collectAsStateWithLifecycle()
     val stream by vm.streamState.collectAsStateWithLifecycle()
     val reconnecting by vm.reconnecting.collectAsStateWithLifecycle()
+    val waitingVpn by vm.waitingVpn.collectAsStateWithLifecycle()
+    val failures by vm.streamFailures.collectAsStateWithLifecycle()
     val size by vm.frameSize.collectAsStateWithLifecycle()
     val zones by vm.zones.collectAsStateWithLifecycle()
     val zoom by vm.zoom.collectAsStateWithLifecycle()
@@ -181,6 +192,8 @@ private fun VideoStage(vm: MonitoringViewModel, camera: Camera, modifier: Modifi
             val message = when {
                 !camera.isOnline -> "오프라인\n마지막 수신 ${KstTime.formatLastSeen(camera.lastSeen)}"
                 stream == StreamState.Connected -> null
+                waitingVpn -> "VPN 연결을 확인하세요.\nVPN이 연결되면 다시 재생합니다."
+                isStreamFailedOut(failures) -> "영상 연결에 실패했습니다.\n자동으로 계속 다시 시도합니다."
                 reconnecting || stream == StreamState.Failed -> "재연결 중..."
                 stream == StreamState.Connecting -> "영상 연결 중..."
                 stream == StreamState.Idle -> "스트리밍 없음"

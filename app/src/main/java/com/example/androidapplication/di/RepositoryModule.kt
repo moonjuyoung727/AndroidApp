@@ -20,11 +20,10 @@ import com.example.androidapplication.core.vpn.RemoteClientVpnProbe
 import com.example.androidapplication.core.vpn.VpnTunnelController
 import dagger.Binds
 import dagger.Module
-import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 
-/** release 빌드에는 Fake가 없다. 서버에 닿지 못하면 빈 화면과 안내를 보여 준다. */
+/** 모든 빌드가 서버 구현을 쓴다. 서버에 닿지 못하면 빈 화면과 안내를 보여 준다. */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
@@ -37,14 +36,4 @@ abstract class RepositoryModule {
     @Binds abstract fun subscription(impl: RemoteSubscriptionRepository): SubscriptionRepository
     @Binds abstract fun probe(impl: RemoteClientVpnProbe): ClientVpnProbe
     @Binds abstract fun tunnel(impl: EmbeddedWireGuardController): VpnTunnelController
-
-    companion object {
-        @Provides
-        fun devOptions(): DevOptions = object : DevOptions {
-            override val available = false
-            override var useFake: Boolean
-                get() = false
-                set(_) = Unit
-        }
-    }
 }

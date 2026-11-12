@@ -58,17 +58,12 @@ class DashboardViewModel @Inject constructor(
     val eventState = _events.asStateFlow()
     private val period = MutableStateFlow(StatsPeriod.Today)
     val selectedPeriod = period.asStateFlow()
-    private var ticks = 0
-
-    suspend fun poll(first: Boolean) {
-        try {
-            devices.refresh(silent = !first)
-            vpn.refresh(silent = true)
-        } catch (e: AppError) {
-            bus.showError(e, "카메라 목록 조회에 실패했습니다.")
-        }
-        // 대시보드 요약 API가 없어 GET /events의 total로 계산한다. 요청이 많아 3회에 한 번만 갱신한다
-        if (first || ticks++ % 3 == 0) loadEvents()
+    /** 보드 목록. 성공하면 10초, 실패하면 15초 뒤 다시. */
+    suspend fun poll(first: Boolean): Boolean = try {
+        devices.refresh(silent = !first).also { vpn.refresh(silent = true) }
+    } catch (e: AppError) {
+        bus.showError(e, "카메라 목록 조회에 실패했습니다.")
+        false
     }
 
     fun choosePeriod(value: StatsPeriod) {
@@ -76,8 +71,14 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch { loadEvents() }
     }
 
-    private suspend fun loadEvents() {
-        try {
+    /**
+     * 최근 이벤트·통계. 보드 목록과 따로 성공하면 30초, 실패하면 15초 뒤 다시 받는다.
+     * 대시보드 요약 API가 없어 GET /events의 total로 계산한다.
+     */
+    suspend fun pollEvents(first: Boolean): Boolean = loadEvents()
+
+    private suspend fun loadEvents(): Boolean {
+        return try {
             val (start, end) = KstTime.range(period.value.daysBack)
             val (todayStart, todayEnd) = KstTime.range(0)
             coroutineScope {
@@ -91,8 +92,10 @@ class DashboardViewModel @Inject constructor(
                     DashboardEvents(today.await(), unconfirmed.await(), counts.awaitAll().toMap(), recent.await())
                 }
             }
+            true
         } catch (_: AppError) {
             // 자동 재조회의 실패는 알리지 않는다. VPN 배너는 그대로 동작한다
+            false
         }
     }
 }

@@ -15,6 +15,7 @@ import com.example.androidapplication.core.data.PrivacyZone
 import com.example.androidapplication.core.data.PrivacyZoneRepository
 import com.example.androidapplication.core.data.SettingsRepository
 import com.example.androidapplication.core.designsystem.*
+import com.example.androidapplication.core.vpn.VpnMonitor
 import com.example.androidapplication.core.webrtc.StreamQuality
 import com.example.androidapplication.core.webrtc.StreamUrlResolver
 import com.example.androidapplication.core.webrtc.WebRtcEngine
@@ -30,20 +31,23 @@ class MultiviewViewModel @Inject constructor(
     private val resolver: StreamUrlResolver,
     private val zoneRepository: PrivacyZoneRepository,
     val sessions: WhepSessionFactory,
+    vpn: VpnMonitor,
     engine: WebRtcEngine,
     settings: SettingsRepository
 ) : ViewModel() {
     val cameras = devices.cameras
     val general = settings.general
     val eglContext = engine.eglContext
+    val vpnUsable = vpn.usable
 
     fun subStreamUrl(camera: Camera): String? = resolver.resolve(camera, StreamQuality.Sub)
     fun zones(mac: String): Flow<List<PrivacyZone>> = zoneRepository.observe(mac)
 
-    suspend fun poll(first: Boolean) = try {
+    suspend fun poll(first: Boolean): Boolean = try {
         devices.refresh(silent = !first)
     } catch (e: AppError) {
         bus.showError(e, "카메라 목록 조회에 실패했습니다.")
+        false
     }
 }
 

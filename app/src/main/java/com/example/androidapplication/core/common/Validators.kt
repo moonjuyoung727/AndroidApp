@@ -5,7 +5,7 @@ object Validators {
     const val EMAIL_MAX = 254
     const val NAME_MAX = 50
     const val PASSWORD_MIN = 8
-    const val PASSWORD_MAX = 64
+    const val PASSWORD_MAX = 128
     const val CAMERA_NAME_MAX = 15
     const val CAMERA_LOCATION_MAX = 30
     const val CAMERA_DESCRIPTION_MAX = 200
@@ -13,7 +13,6 @@ object Validators {
     const val LOCATION_DEFAULT = "미설정"
 
     private val EMAIL = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
-    private val PASSWORD_CHARS = Regex("^[A-Za-z0-9!@#$%^&*]*$")
     private val CAMERA_NAME = Regex("^[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9 \\-_()]*$")
     private val PHONE = Regex("^[0-9]{9,11}$")
 
@@ -33,16 +32,14 @@ object Validators {
     fun password(value: String): String? = when {
         value.isEmpty() -> "비밀번호를 입력해 주세요."
         value.length !in PASSWORD_MIN..PASSWORD_MAX -> "비밀번호는 ${PASSWORD_MIN}~${PASSWORD_MAX}자로 입력해 주세요."
-        !PASSWORD_CHARS.matches(value) -> "비밀번호는 영문, 숫자, 특수문자(!@#$%^&*)만 사용할 수 있습니다."
         else -> null
     }
 
     fun passwordConfirm(password: String, confirm: String): String? =
         if (password != confirm) "비밀번호가 일치하지 않습니다." else null
 
-    /** 회원가입 입력 차단: 허용 외 문자를 지운다. */
-    fun filterPasswordInput(value: String): String =
-        value.filter { PASSWORD_CHARS.matches(it.toString()) }.take(PASSWORD_MAX)
+    /** 비밀번호 입력은 문자 종류를 제한하지 않고 최대 길이만 자른다. */
+    fun filterPasswordInput(value: String): String = value.take(PASSWORD_MAX)
 
     fun phone(value: String): String? =
         if (PHONE.matches(value)) null else "휴대폰 번호를 숫자만 입력해 주세요."

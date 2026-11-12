@@ -1,8 +1,16 @@
 package com.example.androidapplication
 
 import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.common.ApiErrorCode
+import com.example.androidapplication.core.common.LOGIN_INVALID_CREDENTIALS_MESSAGE
+import com.example.androidapplication.core.common.LOGIN_TOO_MANY_REQUESTS_MESSAGE
+import com.example.androidapplication.core.common.SIGNUP_EMAIL_EXISTS_MESSAGE
+import com.example.androidapplication.core.data.forLogin
+import com.example.androidapplication.core.data.forSignup
 import com.example.androidapplication.core.common.NetworkError
+import com.example.androidapplication.core.common.SERVICE_UNAVAILABLE_MESSAGE
 import com.example.androidapplication.core.common.SESSION_EXPIRED_MESSAGE
+import com.example.androidapplication.core.common.TOO_MANY_REQUESTS_MESSAGE
 import com.example.androidapplication.core.common.SessionExpiredError
 import com.example.androidapplication.core.common.UiMessage
 import com.example.androidapplication.core.common.UiMessageBus
@@ -94,7 +102,7 @@ class HttpErrorHandlingTest {
     }
 
     @Test fun missing_fields_use_defaults() = runTest {
-        enqueue(200, """{"defaultChannel":4}""")
+        enqueue(200, """{"default_channel":4}""")
         val dto = caller.call("x") { api.get() }
         assertEquals(4, dto.defaultChannel)
         assertTrue(dto.autoRefresh)
@@ -135,6 +143,45 @@ class HttpErrorHandlingTest {
         val error = failure<ApiError>()
         assertEquals("보드 없음", error.message)
         assertEquals("NOT_FOUND", error.code)
+    }
+
+    @Test fun error_code_decides_kind_before_status() {
+        assertEquals(ApiErrorCode.CONFLICT, ApiError(400, "CONFLICT", "m").kind)
+        assertEquals(ApiErrorCode.NOT_FOUND, ApiError(404, null, "m").kind)
+        assertEquals(ApiErrorCode.BAD_REQUEST, ApiError(400, "SOMETHING_NEW", "m").kind)
+        assertEquals(ApiErrorCode.UNKNOWN, ApiError(418, null, "m").kind)
+    }
+
+    @Test fun unauthorized_code_expires_session() = runTest {
+        enqueue(401, """{"error":{"code":"UNAUTHORIZED","message":"토큰 만료"}}""")
+        assertEquals("토큰 만료", failure<SessionExpiredError>().message)
+    }
+
+    @Test fun code_default_message_when_server_message_missing() = runTest {
+        enqueue(503, """{"error":{"code":"SERVICE_UNAVAILABLE"}}""")
+        val error = failure<ApiError>()
+        assertEquals(ApiErrorCode.SERVICE_UNAVAILABLE, error.kind)
+        assertEquals(SERVICE_UNAVAILABLE_MESSAGE, error.message)
+
+        enqueue(429, """{"error":{"code":"TOO_MANY_REQUESTS"}}""")
+        assertEquals(TOO_MANY_REQUESTS_MESSAGE, failure<ApiError>().message)
+
+        // 500은 화면별 기본 문구를 그대로 쓴다
+        enqueue(500, """{"error":{"code":"INTERNAL_SERVER_ERROR"}}""")
+        assertEquals("기본 문구", failure<ApiError>().message)
+    }
+
+    @Test fun login_errors_use_fixed_messages() {
+        val invalid = ApiError(400, "INVALID_CREDENTIALS", "서버 문구").forLogin()
+        assertEquals(LOGIN_INVALID_CREDENTIALS_MESSAGE, invalid.message)
+        assertEquals("INVALID_CREDENTIALS", invalid.code)
+        assertEquals(LOGIN_TOO_MANY_REQUESTS_MESSAGE, ApiError(429, null, "서버 문구").forLogin().message)
+        assertEquals("서버 문구", ApiError(500, null, "서버 문구").forLogin().message)
+    }
+
+    @Test fun signup_conflict_uses_fixed_message_but_400_keeps_server_guidance() {
+        assertEquals(SIGNUP_EMAIL_EXISTS_MESSAGE, ApiError(409, "CONFLICT", "서버 문구").forSignup().message)
+        assertEquals("이메일 형식 오류", ApiError(400, "BAD_REQUEST", "이메일 형식 오류").forSignup().message)
     }
 
     @Test fun status_specific_fallback() = runTest {

@@ -1,10 +1,14 @@
 package com.example.androidapplication.core.network
 
 import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.common.ApiErrorCode
 import com.example.androidapplication.core.common.AppError
+import com.example.androidapplication.core.common.FORBIDDEN_MESSAGE
 import com.example.androidapplication.core.common.NetworkError
+import com.example.androidapplication.core.common.SERVICE_UNAVAILABLE_MESSAGE
 import com.example.androidapplication.core.common.SESSION_EXPIRED_MESSAGE
 import com.example.androidapplication.core.common.SessionExpiredError
+import com.example.androidapplication.core.common.TOO_MANY_REQUESTS_MESSAGE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
@@ -103,7 +107,7 @@ class ApiCaller @Inject constructor(private val reporter: ConnectivityReporter) 
     } catch (e: CancellationException) {
         throw e
     } catch (e: HttpException) {
-        throw e.toAppError(statusFallback[e.code()] ?: fallback)
+        throw e.toAppError(statusFallback, fallback)
     } catch (e: IOException) {
         throw NetworkError(viaVpn = !public)
     } catch (e: SerializationException) {
@@ -112,11 +116,24 @@ class ApiCaller @Inject constructor(private val reporter: ConnectivityReporter) 
         throw ApiError(0, null, fallback)
     }
 
-    private fun HttpException.toAppError(fallback: String): AppError {
+    private fun HttpException.toAppError(statusFallback: Map<Int, String>, fallback: String): AppError {
         val raw = response()
         val body = parseErrorBody(raw?.errorBody()?.string())
         val hadToken = raw?.raw()?.request?.header("Authorization") != null
-        if (code() == 401 && hadToken) return SessionExpiredError(body.message ?: SESSION_EXPIRED_MESSAGE)
-        return ApiError(code(), body.errorCode, body.message?.takeIf { it.isNotBlank() } ?: fallback, body.details?.toString())
+        val kind = ApiErrorCode.resolve(body.errorCode, code())
+        if (kind == ApiErrorCode.UNAUTHORIZED && hadToken) return SessionExpiredError(body.message ?: SESSION_EXPIRED_MESSAGE)
+        // 서버 message > 화면별 문구 > 코드 공통 문구 > 기본 문구
+        val message = body.message?.takeIf { it.isNotBlank() }
+            ?: statusFallback[kind.status] ?: statusFallback[code()]
+            ?: defaultMessage(kind) ?: fallback
+        return ApiError(code(), body.errorCode, message, body.details?.toString())
+    }
+
+    /** 서버 message가 없을 때, 화면 문구보다 조치 안내가 중요한 코드만 공통 문구를 쓴다. */
+    private fun defaultMessage(kind: ApiErrorCode): String? = when (kind) {
+        ApiErrorCode.FORBIDDEN -> FORBIDDEN_MESSAGE
+        ApiErrorCode.TOO_MANY_REQUESTS -> TOO_MANY_REQUESTS_MESSAGE
+        ApiErrorCode.SERVICE_UNAVAILABLE -> SERVICE_UNAVAILABLE_MESSAGE
+        else -> null
     }
 }

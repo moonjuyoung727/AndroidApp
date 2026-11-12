@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /*
- * 기능마다 인터페이스 하나. Remote 구현은 main에, Fake 구현은 src/debug에 있어 release 빌드에 들어가지 않는다.
+ * 기능마다 인터페이스 하나. 구현은 서버를 부르는 Remote 하나뿐이다 (di/RepositoryModule).
  * canXxx가 false면 서버 연동 플래그가 꺼진 기능이며, 화면은 저장되는 것처럼 보이지 않게 비활성으로 표시한다.
  */
 
@@ -34,7 +34,8 @@ interface DeviceRepository {
     val cameras: StateFlow<ListState<Camera>>
     val canUpdate: Boolean
 
-    suspend fun refresh(silent: Boolean = false)
+    /** 성공하면 true. [force]는 진행 중인 조회를 끊고 다시 받는다. */
+    suspend fun refresh(silent: Boolean = false, force: Boolean = false): Boolean
     suspend fun register(mac: String, name: String, location: String)
     suspend fun update(mac: String, name: String? = null, location: String? = null, description: String? = null)
     suspend fun status(mac: String): DeviceStatus?
@@ -49,7 +50,7 @@ interface EventRepository {
 
 interface VpnRepository {
     val devices: StateFlow<ListState<VpnDevice>>
-    suspend fun refresh(silent: Boolean = false)
+    suspend fun refresh(silent: Boolean = false): Boolean
     suspend fun recover(mac: String)
     fun clear()
 }

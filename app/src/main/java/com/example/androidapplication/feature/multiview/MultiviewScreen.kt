@@ -45,6 +45,7 @@ import com.example.androidapplication.core.webrtc.FrameSize
 import com.example.androidapplication.core.webrtc.StreamState
 import com.example.androidapplication.core.webrtc.VideoLayer
 import com.example.androidapplication.core.webrtc.WhepSession
+import com.example.androidapplication.core.webrtc.isStreamFailedOut
 import com.example.androidapplication.core.webrtc.keepStreaming
 import com.example.androidapplication.navigation.LocalShellChrome
 import com.example.androidapplication.navigation.MonitoringRoute
@@ -183,9 +184,13 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
     val url = remember(camera.mac, camera.webrtcUrlSub, camera.isOnline) { if (camera.isOnline) vm.subStreamUrl(camera) else null }
     var session by remember { mutableStateOf<WhepSession?>(null) }
     var reconnecting by remember { mutableStateOf(false) }
+    var waitingVpn by remember { mutableStateOf(false) }
+    var failures by remember { mutableIntStateOf(0) }
     val target = url.takeIf { active }
     LaunchedEffect(target) {
         reconnecting = false
+        waitingVpn = false
+        failures = 0
         if (target == null) return@LaunchedEffect
         val release = {
             session?.close()
@@ -195,7 +200,10 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
             keepStreaming(
                 open = { vm.sessions.open(target).also { session = it }.state },
                 release = release,
-                onRetry = { reconnecting = true }
+                onRetry = { reconnecting = true },
+                network = vm.vpnUsable,
+                onWaitingNetwork = { waitingVpn = it },
+                onFailures = { failures = it }
             )
         } finally {
             release()
@@ -222,7 +230,7 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
                 val thumbnail = remember(camera.thumbnailUrl) { MediaUrls.resolve(camera.thumbnailUrl) }
                 if (thumbnail != null) AsyncImage(thumbnail, "${camera.name} 썸네일", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 Text(
-                    "스트리밍 없음",
+                    "저화질 스트림 없음",
                     Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.55f), NeuFieldShape).padding(horizontal = 10.dp, vertical = 4.dp),
                     color = Color.White, style = MaterialTheme.typography.labelMedium
                 )
@@ -253,6 +261,8 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
         )
         val streamMessage = when {
             !camera.isOnline || stream == StreamState.Connected -> null
+            waitingVpn -> "VPN 연결 확인 필요"
+            isStreamFailedOut(failures) -> "연결 실패 · 재시도 중"
             reconnecting || stream == StreamState.Failed -> "재연결 중..."
             stream == StreamState.Connecting -> "연결 중..."
             else -> null

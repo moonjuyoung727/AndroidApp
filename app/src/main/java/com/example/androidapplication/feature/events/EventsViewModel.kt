@@ -13,6 +13,7 @@ import com.example.androidapplication.core.data.EventItem
 import com.example.androidapplication.core.data.EventQuery
 import com.example.androidapplication.core.data.EventRepository
 import com.example.androidapplication.core.data.EventStatus
+import com.example.androidapplication.core.data.SettingsRepository
 import com.example.androidapplication.core.media.CaptureManager
 import com.example.androidapplication.core.media.MediaEntity
 import com.example.androidapplication.core.media.MediaType
@@ -82,9 +83,11 @@ class EventsViewModel @Inject constructor(
     private val state: SavedStateHandle,
     private val repository: EventRepository,
     private val bus: UiMessageBus,
-    devices: DeviceRepository
+    devices: DeviceRepository,
+    settings: SettingsRepository
 ) : ViewModel() {
     val cameras = devices.cameras
+    val general = settings.general
     val canUpdate get() = repository.canUpdate
 
     private val _filters = MutableStateFlow(
@@ -103,6 +106,12 @@ class EventsViewModel @Inject constructor(
     val ui = _ui.asStateFlow()
     private var page = 0
     private var job: Job? = null
+
+    /** 목록을 새로 받거나 이어 받을 때마다 올린다. 자동 재조회가 그 사이 결과를 덮어쓰지 않게 한다. */
+    private var loadVersion = 0
+
+    /** 마지막 첫 페이지 조회(필터 변경·자동 재조회)가 성공했는지. 실패면 15초 뒤 다시 받는다. */
+    private var lastLoadOk = true
 
     init {
         reload()
@@ -132,15 +141,18 @@ class EventsViewModel @Inject constructor(
 
     fun reload() {
         job?.cancel()
+        loadVersion++
         job = viewModelScope.launch {
             _ui.update { it.copy(loading = true, selected = emptySet()) }
             try {
                 val result = repository.list(query(1))
                 page = 1
+                lastLoadOk = true
                 _ui.update {
                     it.copy(items = result.items, total = result.total, loading = false, hasMore = result.items.size < result.total)
                 }
             } catch (e: AppError) {
+                lastLoadOk = false
                 bus.showError(e, "이벤트 조회 실패")
                 _ui.update { it.copy(loading = false, hasMore = false) }
             }
@@ -150,6 +162,7 @@ class EventsViewModel @Inject constructor(
     fun loadMore() {
         val current = _ui.value
         if (current.loading || !current.hasMore) return
+        loadVersion++
         job = viewModelScope.launch {
             _ui.update { it.copy(loading = true) }
             try {
@@ -166,14 +179,28 @@ class EventsViewModel @Inject constructor(
         }
     }
 
-    /** 상세에서 돌아왔을 때 불러온 범위를 유지한 채 다시 받는다. */
-    fun refreshLoaded() {
-        val loaded = _ui.value.items.size
-        if (loaded == 0 || _ui.value.loading) return
-        viewModelScope.launch {
-            runCatching { repository.list(query(1, loaded.coerceAtLeast(PAGE_SIZE))) }.onSuccess { result ->
+    /**
+     * 자동 재조회. 불러온 범위를 유지한 채 다시 받는다 (30초마다, 상세에서 돌아왔을 때).
+     * 첫 조회·필터 변경 조회가 진행 중이면 그 결과를 따른다. 실패는 알리지 않고 false를 돌려 15초 뒤 다시 받게 한다.
+     */
+    suspend fun poll(@Suppress("UNUSED_PARAMETER") first: Boolean): Boolean {
+        job?.takeIf { it.isActive }?.let {
+            it.join()
+            return lastLoadOk
+        }
+        val version = loadVersion
+        val size = _ui.value.items.size.coerceAtLeast(PAGE_SIZE)
+        return try {
+            val result = repository.list(query(1, size))
+            // 그 사이 필터가 바뀌었거나 다음 페이지를 받았으면 이 결과는 버린다
+            if (version == loadVersion && !_ui.value.loading) {
+                page = maxOf(page, (result.items.size + PAGE_SIZE - 1) / PAGE_SIZE)
                 _ui.update { it.copy(items = result.items, total = result.total, hasMore = result.items.size < result.total) }
             }
+            lastLoadOk = true
+            true
+        } catch (_: AppError) {
+            false
         }
     }
 

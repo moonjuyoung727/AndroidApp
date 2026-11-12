@@ -46,8 +46,8 @@ object FeatureFlags {
     val profileUpdate = false
     val passwordChange = false
 
-    // APP-F-054 로그인 후 자동 연결. POST /vpn/clients/register가 없으면 공식 앱 안내로 돌아간다
-    val embeddedVpnTunnel = true
+    // APP-F-054 로그인 후 자동 연결. I2 범위 밖이라 끈다 (폰은 WireGuard 공식 앱으로 연결)
+    val embeddedVpnTunnel = false
 }
 
 /** 프라이버시 존 화면 제한 (ICD는 보드당 20개, 화면은 4개). */

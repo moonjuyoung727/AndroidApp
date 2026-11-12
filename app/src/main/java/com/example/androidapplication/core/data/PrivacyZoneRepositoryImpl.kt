@@ -9,6 +9,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
 import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.common.READ_TIMEOUT_MS
 import com.example.androidapplication.core.config.FeatureFlags
 import com.example.androidapplication.core.network.ApiCaller
 import com.example.androidapplication.core.network.PrivacyZoneApi
@@ -99,7 +100,7 @@ class PrivacyZoneRepositoryImpl @Inject constructor(
 
     override suspend fun current(mac: String): List<PrivacyZone> {
         if (FeatureFlags.privacyZones) {
-            val remote = caller.call("프라이버시 존 조회 실패") { api.list(mac) }.map(PrivacyZoneMapper::fromDto)
+            val remote = caller.call("프라이버시 존 조회 실패", timeoutMs = READ_TIMEOUT_MS) { api.list(mac) }.map(PrivacyZoneMapper::fromDto)
             dao.replace(mac, remote.mapIndexed { i, z -> PrivacyZoneMapper.toEntity(mac, z, i) })
             return remote
         }

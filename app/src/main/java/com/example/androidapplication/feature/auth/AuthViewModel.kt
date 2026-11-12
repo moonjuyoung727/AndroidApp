@@ -7,12 +7,12 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.common.ApiErrorCode
 import com.example.androidapplication.core.common.AppError
 import com.example.androidapplication.core.common.UiMessageBus
 import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.data.AuthRepository
 import com.example.androidapplication.core.session.SessionManager
-import com.example.androidapplication.di.DevOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,8 +39,7 @@ data class AuthUi(
 class AuthViewModel @Inject constructor(
     private val repository: AuthRepository,
     private val sessions: SessionManager,
-    private val bus: UiMessageBus,
-    val devOptions: DevOptions
+    private val bus: UiMessageBus
 ) : ViewModel() {
     private val _ui = MutableStateFlow(AuthUi())
     val ui = _ui.asStateFlow()
@@ -65,16 +64,17 @@ class AuthViewModel @Inject constructor(
         return found.isNotEmpty()
     }
 
-    private fun submit(block: suspend () -> Unit) {
+    /** [badRequestField]가 null이면 400을 특정 칸이 아닌 전체 안내로 보여 준다. */
+    private fun submit(badRequestField: String? = FIELD_PASSWORD, block: suspend () -> Unit) {
         viewModelScope.launch {
             _ui.value = AuthUi(busy = true)
             try {
                 block()
                 _ui.update { it.copy(busy = false) }
             } catch (e: ApiError) {
-                _ui.value = when (e.status) {
-                    400 -> AuthUi(fieldErrors = mapOf(FIELD_PASSWORD to e.message))
-                    409 -> AuthUi(fieldErrors = mapOf(FIELD_EMAIL to e.message))
+                _ui.value = when (e.kind) {
+                    ApiErrorCode.BAD_REQUEST if badRequestField != null -> AuthUi(fieldErrors = mapOf(badRequestField to e.message))
+                    ApiErrorCode.CONFLICT -> AuthUi(fieldErrors = mapOf(FIELD_EMAIL to e.message))
                     else -> AuthUi(generalError = e.message)
                 }
             } catch (e: AppError) {
@@ -99,7 +99,8 @@ class AuthViewModel @Inject constructor(
                 )
             )
         ) return
-        submit {
+        // 400은 이메일·비밀번호·이름 중 어느 칸 문제인지 알 수 없어 서버 안내를 전체 오류로 보여 준다
+        submit(badRequestField = null) {
             repository.register(email.trim(), password, name.trim())
             _ui.value = AuthUi(info = "회원가입이 완료되었습니다. 로그인해 주세요.", completedMode = AuthMode.Signup)
         }
@@ -137,22 +138,15 @@ class AuthViewModel @Inject constructor(
                 _ui.value = AuthUi(info = message ?: "비밀번호가 변경되었습니다. 로그인해 주세요.", completedMode = AuthMode.FindPassword)
             } catch (e: ApiError) {
                 // 2.1.5: 400은 인증 코드, 404는 이메일 문제다
-                _ui.value = when (e.status) {
-                    400 -> AuthUi(fieldErrors = mapOf(FIELD_CODE to e.message))
-                    404 -> AuthUi(fieldErrors = mapOf(FIELD_EMAIL to e.message))
+                _ui.value = when (e.kind) {
+                    ApiErrorCode.BAD_REQUEST -> AuthUi(fieldErrors = mapOf(FIELD_CODE to e.message))
+                    ApiErrorCode.NOT_FOUND -> AuthUi(fieldErrors = mapOf(FIELD_EMAIL to e.message))
                     else -> AuthUi(generalError = e.message)
                 }
             } catch (e: AppError) {
                 _ui.value = AuthUi(generalError = e.message)
             }
         }
-    }
-
-    /** 저장소 구현은 앱 시작 시 고르므로 프로세스를 다시 시작한다. */
-    fun setFakeMode(enabled: Boolean, restart: () -> Unit) {
-        devOptions.useFake = enabled
-        bus.show("앱을 다시 시작합니다.")
-        restart()
     }
 
     companion object {

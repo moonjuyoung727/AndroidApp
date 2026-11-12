@@ -36,6 +36,15 @@ data class LoginResponse(
 @Serializable data class RegisterRequest(val email: String, val password: String, val name: String)
 
 @Serializable
+data class RegisterResponse(
+    @SerialName("user_id") val userId: String = "",
+    val email: String = "",
+    val name: String = "",
+    val plan: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
 data class FindIdRequest(
     val name: String,
     @SerialName("phone_number") val phoneNumber: String,
@@ -176,10 +185,17 @@ data class VpnClientRegisterResponse(
 /* 일반 · 알림 설정 */
 @Serializable
 data class GeneralSettingsDto(
-    val autoRefresh: Boolean = true,
-    val showOfflineBoards: Boolean = true,
-    val defaultChannel: Int = 2
+    @SerialName(GeneralSettingKeys.AUTO_REFRESH) val autoRefresh: Boolean = true,
+    @SerialName(GeneralSettingKeys.SHOW_OFFLINE_BOARDS) val showOfflineBoards: Boolean = true,
+    @SerialName(GeneralSettingKeys.DEFAULT_CHANNEL) val defaultChannel: Int = 2
 )
+
+/** PATCH /general-settings/{key}의 key도 응답 필드 이름과 같다. */
+object GeneralSettingKeys {
+    const val AUTO_REFRESH = "auto_refresh"
+    const val SHOW_OFFLINE_BOARDS = "show_offline_boards"
+    const val DEFAULT_CHANNEL = "default_channel"
+}
 
 @Serializable data class DeviceAlertDto(val mac: String = "", val enabled: Boolean = true)
 
@@ -240,12 +256,12 @@ data class PrivacyZoneBody(
 data class SubscriptionDto(
     val plan: String = "",
     val status: String = "",
-    val paymentStatus: String? = null,
-    val nextPaymentDate: String? = null,
-    val autoRenew: Boolean = false
+    @SerialName("payment_status") val paymentStatus: String? = null,
+    @SerialName("next_payment_date") val nextPaymentDate: String? = null,
+    @SerialName("auto_renew") val autoRenew: Boolean = false
 )
 
-@Serializable data class PlanChangeRequest(val planId: String)
+@Serializable data class PlanChangeRequest(@SerialName("plan_id") val planId: String)
 @Serializable data class AutoRenewRequest(val enabled: Boolean)
 
 @Serializable
@@ -255,7 +271,7 @@ data class PaymentMethodDto(
     val brand: String = "",
     val last4: String = "",
     val expiry: String = "",
-    val isDefault: Boolean = false
+    @SerialName("is_default") val isDefault: Boolean = false
 )
 
 /** 배열 또는 { keys: [...] } 응답을 모두 읽는다. */

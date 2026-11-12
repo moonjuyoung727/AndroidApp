@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -61,20 +62,47 @@ private const val RECONNECT_MAX_DELAY_MS = 10_000L
 fun reconnectDelayMs(attempt: Int): Long =
     (RECONNECT_BASE_DELAY_MS shl attempt.coerceIn(0, 3)).coerceAtMost(RECONNECT_MAX_DELAY_MS)
 
+/** 연속 실패가 이 횟수에 이르면 '재연결 중' 대신 '실패'로 표시한다. 재시도는 계속한다. */
+const val STREAM_FAILED_AFTER = 5
+
+fun isStreamFailedOut(consecutiveFailures: Int): Boolean = consecutiveFailures >= STREAM_FAILED_AFTER
+
 /**
  * 취소될 때까지 스트림을 유지한다. 세션이 실패하면 정리한 뒤 간격을 늘려 가며 새로 연다.
- * 재생에 성공하면 간격을 처음부터 다시 잰다. 보드 offline이나 화면 이탈은 호출자가 취소해서 멈춘다.
+ * 재생에 성공하면 간격과 연속 실패 횟수를 처음부터 다시 잰다. 보드 offline이나 화면 이탈은 호출자가 취소해서 멈춘다.
+ * [network]가 false인 동안(Client VPN 문제)은 연결을 시도하지 않고 기다리고, 회복되면 바로 다시 연다.
+ * [onFailures]는 연속 실패 횟수가 바뀔 때마다 불린다 (성공·VPN 회복 시 0).
  */
-suspend fun keepStreaming(open: () -> Flow<StreamState>, release: suspend () -> Unit, onRetry: () -> Unit) {
-    var attempt = 0
+suspend fun keepStreaming(
+    open: () -> Flow<StreamState>,
+    release: suspend () -> Unit,
+    onRetry: () -> Unit,
+    network: Flow<Boolean> = flowOf(true),
+    onWaitingNetwork: (Boolean) -> Unit = {},
+    onFailures: (Int) -> Unit = {}
+) {
+    var failures = 0
+    fun setFailures(value: Int) {
+        if (failures == value) return
+        failures = value
+        onFailures(value)
+    }
     while (true) {
+        if (!network.first()) {
+            onWaitingNetwork(true)
+            network.first { it }
+            onWaitingNetwork(false)
+            // VPN 끊김 중 쌓인 실패는 영상 문제가 아니므로 회복 후 처음부터 센다
+            setFailures(0)
+        }
         open().first { state ->
-            if (state == StreamState.Connected) attempt = 0
+            if (state == StreamState.Connected) setFailures(0)
             state == StreamState.Failed
         }
         release()
+        setFailures(failures + 1)
         onRetry()
-        delay(reconnectDelayMs(attempt++))
+        delay(reconnectDelayMs(failures - 1))
     }
 }
 

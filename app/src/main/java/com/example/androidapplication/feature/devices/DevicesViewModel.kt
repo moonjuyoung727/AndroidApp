@@ -31,14 +31,22 @@ class DevicesViewModel @Inject constructor(
     private val _registerError = MutableStateFlow<String?>(null)
     val registerError = _registerError.asStateFlow()
 
-    suspend fun poll(first: Boolean) = try {
+    suspend fun poll(first: Boolean): Boolean = try {
         repository.refresh(silent = !first)
     } catch (e: AppError) {
         bus.showError(e, "카메라 목록 조회에 실패했습니다.")
+        false
     }
 
+    /** 새로고침 버튼. 진행 중인 조회를 끊고 바로 다시 받는다. */
     fun refresh() {
-        viewModelScope.launch { poll(first = true) }
+        viewModelScope.launch {
+            try {
+                repository.refresh(force = true)
+            } catch (e: AppError) {
+                bus.showError(e, "카메라 목록 조회에 실패했습니다.")
+            }
+        }
     }
 
     fun clearRegisterError() {

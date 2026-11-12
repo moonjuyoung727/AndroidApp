@@ -15,7 +15,7 @@ import retrofit2.http.QueryMap
 /** 로그인 전에 쓰는 API. I2에서는 이 API도 VPN 내부 서버로 나간다. */
 interface PublicApi {
     @POST("auth/login") suspend fun login(@Body body: LoginRequest): LoginResponse
-    @POST("auth/register") suspend fun register(@Body body: RegisterRequest)
+    @POST("auth/register") suspend fun register(@Body body: RegisterRequest): RegisterResponse
     @POST("auth/find-id") suspend fun findId(@Body body: FindIdRequest): FindIdResponse
     @POST("auth/reset-password") suspend fun resetPassword(@Body body: ResetPasswordRequest): MessageResponse
     @POST("vpn/clients/register") suspend fun registerVpnClient(@Body body: VpnClientRegisterRequest): VpnClientRegisterResponse

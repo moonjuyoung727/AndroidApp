@@ -58,14 +58,18 @@ class NotificationSettingsViewModel @Inject constructor(
     val server = _server.asStateFlow()
     val localSettings = local.notifications.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LocalNotificationSettings())
     val cameras = devices.cameras
+    private var loaded = false
 
-    init {
-        viewModelScope.launch {
-            try {
-                _server.value = repository.notifications()
-            } catch (e: AppError) {
-                bus.showError(e, "알림 설정 정보 조회 실패")
-            }
+    /** 화면 진입 시 한 번 받는다. 실패하면 15초마다 다시 받는다 (첫 실패만 알린다). */
+    suspend fun load(first: Boolean): Boolean {
+        if (loaded) return true
+        return try {
+            _server.value = repository.notifications()
+            loaded = true
+            true
+        } catch (e: AppError) {
+            if (first) bus.showError(e, "알림 설정 정보 조회 실패")
+            false
         }
     }
 
@@ -326,21 +330,24 @@ class LoginSessionsViewModel @Inject constructor(
     val sessions = _sessions.asStateFlow()
     private val _loading = MutableStateFlow(true)
     val loading = _loading.asStateFlow()
+    private var loaded = false
 
-    init {
-        load()
-    }
+    /** 화면 진입 시 한 번 받는다. 실패하면 15초마다 다시 받는다 (첫 실패만 알린다). */
+    suspend fun poll(first: Boolean): Boolean = loaded || fetch(notify = first)
 
     private fun load() {
-        viewModelScope.launch {
-            try {
-                _sessions.value = repository.sessions()
-            } catch (e: AppError) {
-                bus.showError(e, "로그인 기기 목록 조회에 실패했습니다.")
-            } finally {
-                _loading.value = false
-            }
-        }
+        viewModelScope.launch { fetch(notify = true) }
+    }
+
+    private suspend fun fetch(notify: Boolean): Boolean = try {
+        _sessions.value = repository.sessions()
+        loaded = true
+        true
+    } catch (e: AppError) {
+        if (notify) bus.showError(e, "로그인 기기 목록 조회에 실패했습니다.")
+        false
+    } finally {
+        _loading.value = false
     }
 
     fun revoke(id: String) {
@@ -503,8 +510,10 @@ class PrivacyZoneViewModel @Inject constructor(
         }
     }
 
-    suspend fun poll(first: Boolean) {
-        runCatching { devices.refresh(silent = !first) }
+    suspend fun poll(first: Boolean): Boolean = try {
+        devices.refresh(silent = !first)
+    } catch (_: AppError) {
+        false
     }
 
     override fun onCleared() {

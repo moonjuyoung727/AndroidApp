@@ -76,9 +76,14 @@ fun AuthScreen(modifier: Modifier = Modifier, vm: AuthViewModel = hiltViewModel(
         modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text("SECURE CAM", color = NeuMuted, style = MaterialTheme.typography.labelLarge)
+        Text(
+            "SECURE CAM",
+            Modifier.align(Alignment.CenterHorizontally),
+            color = NeuMuted,
+            style = MaterialTheme.typography.labelLarge
+        )
         VerticalGap(6)
-        Text(mode.title, style = MaterialTheme.typography.headlineLarge)
+        Text(mode.heading, Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.headlineLarge)
         VerticalGap(28)
 
         val gap = 10
@@ -134,7 +139,10 @@ fun AuthScreen(modifier: Modifier = Modifier, vm: AuthViewModel = hiltViewModel(
         PrimaryButton(if (ui.busy) "처리 중..." else mode.title, ::submit, Modifier.fillMaxWidth(), enabled = !ui.busy)
         VerticalGap(16)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            AuthMode.entries.filter { it != mode }.forEach { target -> TextAction(target.title, { switch(target) }, color = NeuMuted) }
+            // 로그인 화면에서만 다른 화면으로 가는 링크를 보이고, 나머지 화면은 로그인으로 돌아가는 링크만 둔다
+            val targets = if (mode == AuthMode.Login) AuthMode.entries.filter { it != AuthMode.Login } else listOf(AuthMode.Login)
+            // key가 없으면 같은 자리의 링크가 이전 링크의 눌림(ripple) 상태를 물려받는다
+            targets.forEach { target -> key(target) { TextAction(target.title, { switch(target) }, color = NeuMuted) } }
         }
     }
 }

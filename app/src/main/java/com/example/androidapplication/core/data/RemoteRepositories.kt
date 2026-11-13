@@ -102,7 +102,7 @@ class RemoteAuthRepository @Inject constructor(
     }
 
     override suspend fun findId(name: String, phone: String, code: String): String =
-        caller.call("아이디 찾기에 실패했습니다.") {
+        caller.call("이메일 찾기에 실패했습니다.") {
             publicApi.findId(FindIdRequest(name, phone, code)).email
         }
 

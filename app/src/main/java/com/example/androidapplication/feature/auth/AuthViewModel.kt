@@ -20,10 +20,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class AuthMode(val title: String, val submit: String) {
-    Login("로그인", "LOGIN"),
+// title: 버튼·화면 전환 링크 문구, heading: 화면 상단 제목
+enum class AuthMode(val title: String, val submit: String, val heading: String = title) {
+    Login("로그인", "LOGIN", heading = "Login"),
     Signup("회원가입", "SIGN UP"),
-    FindId("아이디 찾기", "FIND ID"),
+    FindId("이메일 찾기", "FIND EMAIL"),
     FindPassword("비밀번호 찾기", "RESET PASSWORD")
 }
 

@@ -152,7 +152,6 @@ private fun VideoStage(vm: MonitoringViewModel, camera: Camera, modifier: Modifi
     val waitingVpn by vm.waitingVpn.collectAsStateWithLifecycle()
     val failures by vm.streamFailures.collectAsStateWithLifecycle()
     val size by vm.frameSize.collectAsStateWithLifecycle()
-    val zones by vm.zones.collectAsStateWithLifecycle()
     val zoom by vm.zoom.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val clock = rememberKstClock()
@@ -164,7 +163,7 @@ private fun VideoStage(vm: MonitoringViewModel, camera: Camera, modifier: Modifi
         }
     }
 
-    // 스테이지 비율을 실제 프레임 비율에 맞춰 마스크가 어긋나지 않게 한다
+    // 스테이지 비율을 실제 프레임 비율에 맞춰 영상이 늘어나지 않게 한다
     val ratio = size?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: (16f / 9f)
     val currentZoom by rememberUpdatedState(zoom)
 
@@ -176,7 +175,7 @@ private fun VideoStage(vm: MonitoringViewModel, camera: Camera, modifier: Modifi
                 .background(Color.Black)
                 .zoomGestures(view = { currentZoom }, onChange = vm::setZoom)
         ) {
-            if (session != null) VideoLayer(session, vm.eglContext, zones, Modifier.fillMaxSize().zoomLayer(zoom))
+            if (session != null) VideoLayer(session, vm.eglContext, modifier = Modifier.fillMaxSize().zoomLayer(zoom))
 
             // 아래 오버레이는 화면에만 그려지고 저장본에는 들어가지 않는다
             Row(Modifier.align(Alignment.TopStart).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -210,13 +209,12 @@ private fun VideoStage(vm: MonitoringViewModel, camera: Camera, modifier: Modifi
 private fun ControlRow(vm: MonitoringViewModel, onViewSaved: (Long) -> Unit, modifier: Modifier, overVideo: Boolean) {
     val stream by vm.streamState.collectAsStateWithLifecycle()
     val quality by vm.quality.collectAsStateWithLifecycle()
-    val available by vm.zonesAvailable.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val muted by vm.muted.collectAsStateWithLifecycle()
     val fullscreen by vm.fullscreen.collectAsStateWithLifecycle()
     var moreOpen by rememberSaveable { mutableStateOf(false) }
 
-    val block = vm.saveBlockReason(stream, quality, available)
+    val block = vm.saveBlockReason(stream, quality)
     val bg = if (overVideo) Color.Black.copy(alpha = 0.5f) else NeuSurfaceStrong
     val tint = if (overVideo) Color.White else NeuAccent
 

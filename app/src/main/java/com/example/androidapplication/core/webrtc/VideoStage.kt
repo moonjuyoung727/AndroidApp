@@ -64,12 +64,15 @@ class TextureVideoRenderer(context: Context) : TextureView(context), TextureView
     }
 }
 
-/** 영상과 활성 프라이버시 존을 같은 레이어에 그린다. 바깥에서 비율과 변환을 정한다. */
+/**
+ * 영상을 그린다. 바깥에서 비율과 변환을 정한다.
+ * 보드가 마스킹한 영상을 보내므로 [zones]는 프라이버시 존 설정 화면의 미리보기에서만 넘긴다.
+ */
 @Composable
 fun VideoLayer(
     session: WhepSession?,
     eglContext: EglBase.Context,
-    zones: List<PrivacyZone>,
+    zones: List<PrivacyZone> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val rendererHolder = androidx.compose.runtime.remember { arrayOfNulls<TextureVideoRenderer>(1) }

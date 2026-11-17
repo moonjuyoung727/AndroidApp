@@ -50,9 +50,9 @@ object FeatureFlags {
     val embeddedVpnTunnel = false
 }
 
-/** 프라이버시 존 화면 제한 (ICD는 보드당 20개, 화면은 4개). */
+/** 프라이버시 존 제한. 개수는 ICD 2.6.2(보드당 20개), 이름은 ICD 2.6.1 zone_name(30자). */
 object PrivacyZoneLimits {
-    const val MAX_ZONES = 4
+    const val MAX_ZONES = 20
     const val MIN_SIZE = 0.03f
-    const val NAME_MAX = 20
+    const val NAME_MAX = 30
 }

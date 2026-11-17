@@ -9,7 +9,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
-import com.example.androidapplication.core.data.PrivacyZone
 import kotlinx.coroutines.CompletableDeferred
 import org.webrtc.EglBase
 import org.webrtc.GlRectDrawer
@@ -31,13 +30,13 @@ data class SegmentResult(
     val durationMs: Long,
     val width: Int,
     val height: Int,
-    val sizeBytes: Long,
-    val maskedZoneCount: Int
+    val sizeBytes: Long
 )
 
 /**
  * 수신 트랙 녹화 파이프라인.
- * VideoSink → 프레임 retain 후 GL 스레드로 전달 → 인코더 Surface에 그리며 마스크 적용 → MediaCodec(H.264) → MediaMuxer(MP4)
+ * VideoSink → 프레임 retain 후 GL 스레드로 전달 → 인코더 Surface에 그림 → MediaCodec(H.264) → MediaMuxer(MP4)
+ * 프라이버시 마스킹은 보드가 영상에 적용해 보내므로 여기서는 그리지 않는다.
  *
  * WebRTC 디코더 스레드를 막지 않는다. 큐가 차면 프레임을 버린다.
  * 작성 중에는 .tmp로 쓰고 정상 종료 시 이름을 바꾼다. 10분마다 파일을 나눈다.
@@ -53,8 +52,6 @@ class VideoRecorder(
     private val queued = AtomicInteger(0)
 
     @Volatile private var accepting = true
-    /** 녹화 중 존이 바뀌면 다음 프레임부터 반영한다. */
-    @Volatile var zones: List<PrivacyZone> = emptyList()
 
     private val bytesFromFinished = AtomicLong(0)
     private val bytesCurrent = AtomicLong(0)
@@ -140,25 +137,10 @@ class VideoRecorder(
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         // 도중에 해상도가 바뀌어도 뷰포트 크기(첫 프레임 기준)에 맞춰 스케일된다
         frameDrawer!!.drawFrame(frame, drawer!!, null, 0, 0, encoderWidth, encoderHeight)
-        current.maskedZones = maxOf(current.maskedZones, drawMasks())
         gl.swapBuffers(ptsNs)
         current.lastPtsNs = ptsNs
         current.frames++
         drain(current, endOfStream = false)
-    }
-
-    private fun drawMasks(): Int {
-        val active = MaskGeometry.active(zones)
-        if (active.isEmpty()) return 0
-        GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
-        GLES20.glClearColor(0f, 0f, 0f, 1f)
-        active.forEach { zone ->
-            val rect = MaskGeometry.toPixels(zone, encoderWidth, encoderHeight)
-            GLES20.glScissor(rect.left, MaskGeometry.glScissorY(rect, encoderHeight), rect.width, rect.height)
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-        }
-        GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
-        return active.size
     }
 
     private fun startSegment() {
@@ -250,7 +232,7 @@ class VideoRecorder(
             onSegment(
                 SegmentResult(
                     s.file, s.startedAtMs, s.lastSampleUs / 1000, encoderWidth, encoderHeight,
-                    s.file.length(), s.maskedZones
+                    s.file.length()
                 )
             )
         } else {
@@ -282,7 +264,6 @@ class VideoRecorder(
         var frames = 0L
         var lastPtsNs = 0L
         var lastSampleUs = 0L
-        var maskedZones = 0
         private var firstNs = Long.MIN_VALUE
 
         /** PTS는 파일마다 첫 프레임을 0으로 맞춘다. */

@@ -222,7 +222,6 @@ fun MediaDetailScreen(nav: NavHostController, vm: MediaDetailViewModel = hiltVie
             InfoRow("해상도", if (item.width > 0) "${item.width} × ${item.height}" else "-")
             if (item.type == MediaType.VIDEO) InfoRow("길이", KstTime.formatElapsed(item.durationMs))
             InfoRow("위치", item.location.ifBlank { "-" })
-            InfoRow("프라이버시 마스크", if (item.maskedZoneCount > 0) "적용됨 (${item.maskedZoneCount}개)" else "적용 영역 없음")
             item.eventType?.let { InfoRow("이벤트", EventTypes.label(it)) }
         }
     }

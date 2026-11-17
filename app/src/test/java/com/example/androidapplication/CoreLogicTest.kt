@@ -5,6 +5,7 @@ import com.example.androidapplication.core.common.Mac
 import com.example.androidapplication.core.common.Validators
 import com.example.androidapplication.core.common.pollLoop
 import com.example.androidapplication.core.config.ApiConfig
+import com.example.androidapplication.core.config.PrivacyZoneLimits
 import com.example.androidapplication.core.data.Camera
 import com.example.androidapplication.core.common.AppError
 import com.example.androidapplication.core.data.LIST_LOAD_FAILED_MESSAGE
@@ -19,7 +20,6 @@ import com.example.androidapplication.core.data.RecoveryState
 import com.example.androidapplication.core.designsystem.ZoomMath
 import com.example.androidapplication.core.designsystem.ZoomView
 import com.example.androidapplication.core.media.LocalStorageSettings
-import com.example.androidapplication.core.media.MaskGeometry
 import com.example.androidapplication.core.media.MediaFileNames
 import com.example.androidapplication.core.media.RecordingFormat
 import com.example.androidapplication.core.media.StoragePolicy
@@ -213,31 +213,14 @@ class PrivacyZoneTest {
         assertEquals(0.8f, body.coordinates.y2, 1e-5f)
     }
 
-    private fun zone(x: Float, y: Float, w: Float, h: Float, on: Boolean = true) = PrivacyZone("i", "n", x, y, w, h, on)
-
-    @Test fun mask_rounds_outward_and_stays_in_frame() {
-        val rect = MaskGeometry.toPixels(zone(0.101f, 0.5f, 0.2f, 0.6f), 1000, 100)
-        assertEquals(101, rect.left)
-        assertEquals(301, rect.right)
-        assertEquals(50, rect.top)
-        assertEquals(100, rect.bottom)
-    }
-
-    @Test fun gl_scissor_flips_y() {
-        val rect = MaskGeometry.PixelRect(0, 10, 50, 40)
-        assertEquals(60, MaskGeometry.glScissorY(rect, 100))
-    }
-
-    @Test fun inactive_zones_are_not_burned() =
-        assertEquals(1, MaskGeometry.active(listOf(zone(0f, 0f, .1f, .1f), zone(0f, 0f, .1f, .1f, false))).size)
-
     @Test fun draft_enforces_min_size_and_max_count() {
         var id = 0
         fun add(list: List<PrivacyZone>) = ZoneDraft.tryAdd(list, 0f, 0f, 0.5f, 0.5f) { "${id++}" }
         assertNull(ZoneDraft.tryAdd(emptyList(), 0f, 0f, 0.02f, 0.5f) { "x" })
+        assertEquals(20, PrivacyZoneLimits.MAX_ZONES)
         var zones = emptyList<PrivacyZone>()
-        repeat(4) { zones = add(zones)!! }
-        assertEquals(listOf("영역 1", "영역 2", "영역 3", "영역 4"), zones.map { it.name })
+        repeat(PrivacyZoneLimits.MAX_ZONES) { zones = add(zones)!! }
+        assertEquals((1..PrivacyZoneLimits.MAX_ZONES).map { "영역 $it" }, zones.map { it.name })
         assertNull(add(zones))
     }
 

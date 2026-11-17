@@ -213,7 +213,6 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
     val idleSize = remember { MutableStateFlow<FrameSize?>(null) }
     val stream by (session?.state ?: idleState).collectAsStateWithLifecycle()
     val size by (session?.frameSize ?: idleSize).collectAsStateWithLifecycle()
-    val zones by remember(camera.mac) { vm.zones(camera.mac) }.collectAsStateWithLifecycle(emptyList())
     var detailOpen by rememberSaveable { mutableStateOf(false) }
 
     Box(
@@ -238,7 +237,7 @@ private fun ChannelCard(camera: Camera, channel: Int, active: Boolean, highlight
             session != null -> {
                 val ratio = size?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: (16f / 9f)
                 Box(Modifier.aspectRatio(ratio).align(Alignment.Center).clipToBounds()) {
-                    VideoLayer(session, vm.eglContext, zones, Modifier.fillMaxSize())
+                    VideoLayer(session, vm.eglContext, modifier = Modifier.fillMaxSize())
                 }
             }
         }

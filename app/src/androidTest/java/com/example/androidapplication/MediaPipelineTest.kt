@@ -7,7 +7,6 @@ import android.media.MediaMetadataRetriever
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.androidapplication.core.data.PrivacyZone
 import com.example.androidapplication.core.media.AppDatabase
 import com.example.androidapplication.core.media.FrameGrabber
 import com.example.androidapplication.core.media.MediaEntity
@@ -16,7 +15,6 @@ import com.example.androidapplication.core.media.MediaType
 import com.example.androidapplication.core.media.RecordingFormat
 import com.example.androidapplication.core.media.SegmentResult
 import com.example.androidapplication.core.media.VideoRecorder
-import com.example.androidapplication.core.media.burnMasks
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -46,9 +44,6 @@ class MediaPipelineTest {
 
     private val width = 640
     private val height = 360
-
-    /** 왼쪽 위 사분면에 마스크. y 뒤집기가 틀리면 왼쪽 아래가 가려져 실패한다. */
-    private val topLeftZone = PrivacyZone("z", "n", 0f, 0f, 0.5f, 0.5f, enabled = true)
 
     @Before fun setUp() {
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions())
@@ -99,10 +94,10 @@ class MediaPipelineTest {
         return (Color.red(c) + Color.green(c) + Color.blue(c)) / 3
     }
 
-    @Test fun mp4_is_playable_and_mask_is_burned_into_pixels() = runBlocking {
+    /** 마스킹은 보드가 하므로 녹화본은 받은 프레임을 그대로 담아야 한다. */
+    @Test fun mp4_is_playable_and_keeps_frames_unmasked() = runBlocking {
         val results = mutableListOf<SegmentResult>()
         val rec = recorder(results)
-        rec.zones = listOf(topLeftZone)
         feed(rec, 5_000_000_000L, 60)
         withTimeout(10_000) { rec.stop().await() }
 
@@ -111,14 +106,13 @@ class MediaPipelineTest {
         assertFalse("임시 파일이 남으면 안 된다", File(segment.file.path + ".tmp").exists())
         assertEquals(width, segment.width)
         assertEquals(height, segment.height)
-        assertEquals(1, segment.maskedZoneCount)
         assertTrue("길이 ${segment.durationMs}ms", segment.durationMs in 1_000..3_000)
         assertTrue("쓴 바이트", rec.writtenBytes > 0)
 
         val retriever = MediaMetadataRetriever().apply { setDataSource(segment.file.path) }
         val bitmap = retriever.getFrameAtTime(1_000_000)!!
         retriever.release()
-        assertTrue("가려진 영역 ${bitmap.brightnessAt(.25f, .25f)}", bitmap.brightnessAt(.25f, .25f) < 40)
+        assertTrue("왼쪽 위 ${bitmap.brightnessAt(.25f, .25f)}", bitmap.brightnessAt(.25f, .25f) > 180)
         assertTrue("오른쪽 위 ${bitmap.brightnessAt(.75f, .25f)}", bitmap.brightnessAt(.75f, .25f) > 180)
         assertTrue("왼쪽 아래 ${bitmap.brightnessAt(.25f, .75f)}", bitmap.brightnessAt(.25f, .75f) in 90..180)
     }
@@ -161,7 +155,7 @@ class MediaPipelineTest {
         assertTrue(dir.listFiles()!!.isEmpty())
     }
 
-    @Test fun snapshot_keeps_full_resolution_orientation_and_burns_mask() {
+    @Test fun snapshot_keeps_full_resolution_and_orientation() {
         val grabber = FrameGrabber(egl.eglBaseContext)
         val f = frame(0)
         val bitmap = grabber.renderOnThisThread(f)
@@ -170,10 +164,6 @@ class MediaPipelineTest {
         assertEquals(width, bitmap.width)
         assertEquals(height, bitmap.height)
         assertTrue("위쪽이 밝아야 한다", bitmap.brightnessAt(.5f, .25f) > bitmap.brightnessAt(.5f, .75f) + 40)
-
-        assertEquals(1, burnMasks(bitmap, listOf(topLeftZone, topLeftZone.copy(enabled = false))))
-        assertEquals(0, bitmap.brightnessAt(.25f, .25f))
-        assertTrue(bitmap.brightnessAt(.75f, .25f) > 180)
     }
 
     @Test fun account_b_cannot_see_account_a_files() = runBlocking {

@@ -38,6 +38,7 @@ data class MediaEntity(
     val filePath: String,
     val thumbnailPath: String? = null,
     val recordingSessionId: String? = null,
+    /** 앱이 마스크를 직접 그리던 때의 값. 지금은 쓰지 않지만 DB 스키마(version 1)를 유지하려고 남긴다. */
     val maskedZoneCount: Int = 0,
     val eventId: String? = null,
     val eventType: String? = null

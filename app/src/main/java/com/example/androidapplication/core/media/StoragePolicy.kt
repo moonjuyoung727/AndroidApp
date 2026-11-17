@@ -1,11 +1,7 @@
 package com.example.androidapplication.core.media
 
-import android.graphics.Rect
 import com.example.androidapplication.core.common.KstTime
-import com.example.androidapplication.core.data.PrivacyZone
 import java.time.Instant
-import kotlin.math.ceil
-import kotlin.math.floor
 
 data class LocalStorageSettings(
     /** 0이면 제한 없음. */
@@ -70,29 +66,6 @@ object MediaFileNames {
         while (exists(name)) name = "${base}_${suffix++}.$extension"
         return name
     }
-}
-
-/** 비율 좌표의 프라이버시 존을 픽셀로 바꾼다. 가장자리가 새지 않도록 바깥쪽으로 올림한다. */
-object MaskGeometry {
-    data class PixelRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
-        val width get() = right - left
-        val height get() = bottom - top
-    }
-
-    fun active(zones: List<PrivacyZone>): List<PrivacyZone> = zones.filter { it.enabled }
-
-    fun toPixels(zone: PrivacyZone, frameWidth: Int, frameHeight: Int): PixelRect {
-        val left = floor(zone.x * frameWidth).toInt().coerceIn(0, frameWidth)
-        val top = floor(zone.y * frameHeight).toInt().coerceIn(0, frameHeight)
-        val right = ceil((zone.x + zone.width) * frameWidth).toInt().coerceIn(0, frameWidth)
-        val bottom = ceil((zone.y + zone.height) * frameHeight).toInt().coerceIn(0, frameHeight)
-        return PixelRect(left, top, right, bottom)
-    }
-
-    /** glScissor용 y 뒤집기 (GL 원점은 왼쪽 아래). */
-    fun glScissorY(rect: PixelRect, frameHeight: Int): Int = frameHeight - rect.bottom
-
-    fun PixelRect.toRect() = Rect(left, top, right, bottom)
 }
 
 /** 인코더 크기는 짝수, 비트레이트는 해상도 기반. */

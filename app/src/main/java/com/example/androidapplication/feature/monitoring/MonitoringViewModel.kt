@@ -16,7 +16,6 @@ import com.example.androidapplication.core.designsystem.ZoomView
 import com.example.androidapplication.core.media.CaptureManager
 import com.example.androidapplication.core.media.MediaLibrary
 import com.example.androidapplication.core.media.RecordingHandle
-import com.example.androidapplication.core.media.ZONES_UNAVAILABLE
 import com.example.androidapplication.core.network.AppJson
 import com.example.androidapplication.core.vpn.ClientVpnState
 import com.example.androidapplication.core.vpn.VpnMonitor
@@ -113,10 +112,9 @@ class MonitoringViewModel @Inject constructor(
     )
     val zoom = _zoom.asStateFlow()
 
+    /** 설정 목록의 개수 표시용. 영상 마스킹은 보드가 한다. */
     private val _zones = MutableStateFlow<List<PrivacyZone>>(emptyList())
     val zones = _zones.asStateFlow()
-    private val _zonesAvailable = MutableStateFlow(true)
-    val zonesAvailable = _zonesAvailable.asStateFlow()
 
     private val _status = MutableStateFlow<DeviceStatus?>(null)
     val deviceStatus = _status.asStateFlow()
@@ -167,11 +165,8 @@ class MonitoringViewModel @Inject constructor(
         }
         viewModelScope.launch {
             zoneRepository.observe(mac)
-                .catch { _zonesAvailable.value = false }
-                .collect { list ->
-                    _zones.value = list
-                    handle?.updateZones(list)
-                }
+                .catch { }
+                .collect { _zones.value = it }
         }
         viewModelScope.launch {
             _status.value = runCatching { devices.status(mac) }.getOrNull()
@@ -239,10 +234,9 @@ class MonitoringViewModel @Inject constructor(
     }
 
     /** 저장은 connected 상태의 메인 스트림에서만 가능하다. */
-    fun saveBlockReason(stream: StreamState, q: StreamQuality, available: Boolean): String? = when {
+    fun saveBlockReason(stream: StreamState, q: StreamQuality): String? = when {
         stream != StreamState.Connected -> "영상이 연결되면 저장할 수 있습니다."
         q != StreamQuality.Main -> "고화질(메인 스트림)에서만 저장할 수 있습니다."
-        !available -> ZONES_UNAVAILABLE
         else -> null
     }
 
@@ -275,7 +269,6 @@ class MonitoringViewModel @Inject constructor(
                     viewModelScope.launch { stopRecordingWith("녹화 중 오류가 발생해 지금까지의 내용을 저장했습니다.") }
                     android.util.Log.e("Monitoring", "recording failed", error)
                 }
-                h.updateZones(_zones.value)
                 handle = h
                 _recording.value = RecordingUi(active = true)
                 startTicker(h)

@@ -4,8 +4,6 @@ import android.graphics.Bitmap
 import com.example.androidapplication.core.common.AppError
 import com.example.androidapplication.core.data.Camera
 import com.example.androidapplication.core.data.EventItem
-import com.example.androidapplication.core.data.PrivacyZone
-import com.example.androidapplication.core.data.PrivacyZoneRepository
 import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.common.Mac
 import com.example.androidapplication.core.session.SessionManager
@@ -35,13 +33,11 @@ class CaptureError(message: String) : AppError(message)
 private const val SNAPSHOT_TIMEOUT_MS = 3_000L
 private const val SNAPSHOT_MIN_FREE = 20L * 1024 * 1024
 private const val JPEG_QUALITY = 90
-const val ZONES_UNAVAILABLE = "프라이버시 존 정보를 불러오지 못해 저장할 수 없습니다."
 
 @Singleton
 class CaptureManager @Inject constructor(
     private val engine: WebRtcEngine,
     private val library: MediaLibrary,
-    private val zoneRepository: PrivacyZoneRepository,
     private val sessions: SessionManager,
     private val okHttp: OkHttpClient,
     @param:Named("app") private val scope: CoroutineScope
@@ -50,24 +46,14 @@ class CaptureManager @Inject constructor(
 
     private fun owner(): String = sessions.session?.userId ?: throw CaptureError("로그인 정보를 확인할 수 없습니다.")
 
-    /** 존 정보를 불러오지 못하면 저장을 막는다 (fail closed). */
-    private suspend fun requireZones(mac: String): List<PrivacyZone> = try {
-        zoneRepository.current(mac)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Exception) {
-        throw CaptureError(ZONES_UNAVAILABLE)
-    }
-
+    /** 보드가 마스킹한 메인 스트림 프레임을 그대로 저장한다. */
     suspend fun snapshot(session: WhepSession, camera: Camera): MediaEntity {
         val ownerId = owner()
-        val zones = requireZones(camera.mac)
         library.ensureCanSave(SNAPSHOT_MIN_FREE)
         val bitmap = grabber.grab(session, SNAPSHOT_TIMEOUT_MS)
             ?: throw CaptureError("영상 프레임을 받지 못했습니다. 잠시 후 다시 시도해 주세요.")
         return withContext(Dispatchers.IO) {
             try {
-                val masked = burnMasks(bitmap, zones)
                 val now = Instant.now()
                 val dir = library.cameraDir(camera.mac)
                 val name = MediaFileNames.capture(camera.deviceId, now, "jpg") { File(dir, it).exists() }
@@ -86,8 +72,7 @@ class CaptureManager @Inject constructor(
                         mac = camera.mac, deviceId = camera.deviceId, cameraName = camera.name, location = camera.location,
                         capturedAtUtc = now.toEpochMilli(), width = bitmap.width, height = bitmap.height,
                         sizeBytes = target.length(), filePath = target.path,
-                        thumbnailPath = library.writeThumbnail(bitmap, camera.mac, target.nameWithoutExtension),
-                        maskedZoneCount = masked
+                        thumbnailPath = library.writeThumbnail(bitmap, camera.mac, target.nameWithoutExtension)
                     )
                 )
             } finally {
@@ -98,9 +83,8 @@ class CaptureManager @Inject constructor(
 
     suspend fun startRecording(session: WhepSession, camera: Camera, onFatal: (Throwable) -> Unit): RecordingHandle {
         val ownerId = owner()
-        val zones = requireZones(camera.mac)
         library.ensureCanSave(StoragePolicy.MIN_FREE_TO_START)
-        return RecordingHandle(session, camera, ownerId, zones, engine, library, scope, onFatal)
+        return RecordingHandle(session, camera, ownerId, engine, library, scope, onFatal)
     }
 
     /** 이벤트 미디어를 인증된 클라이언트로 받아 라이브러리에 EVENT_DOWNLOAD로 등록한다. 실패하면 부분 파일을 지운다. */
@@ -168,7 +152,6 @@ class RecordingHandle internal constructor(
     private val session: WhepSession,
     private val camera: Camera,
     private val ownerId: String,
-    initialZones: List<PrivacyZone>,
     engine: WebRtcEngine,
     private val library: MediaLibrary,
     private val scope: CoroutineScope,
@@ -180,17 +163,12 @@ class RecordingHandle internal constructor(
     val startedAtMs = System.currentTimeMillis()
 
     private val recorder = VideoRecorder(engine.eglContext, ::nextFile, ::onSegment, onFatal).also {
-        it.zones = initialZones
         session.addSink(it)
     }
 
     val writtenBytes: Long get() = recorder.writtenBytes
     val currentSegmentBytes: Long get() = recorder.currentSegmentBytes
     val droppedFrames: Long get() = recorder.droppedFrames.get()
-
-    fun updateZones(zones: List<PrivacyZone>) {
-        recorder.zones = zones
-    }
 
     private fun nextFile(): File {
         val dir = library.cameraDir(camera.mac)
@@ -208,7 +186,7 @@ class RecordingHandle internal constructor(
                     capturedAtUtc = result.startedAtMs, durationMs = result.durationMs,
                     width = result.width, height = result.height, sizeBytes = result.sizeBytes,
                     filePath = result.file.path, thumbnailPath = library.videoThumbnail(result.file, camera.mac),
-                    recordingSessionId = sessionId, maskedZoneCount = result.maskedZoneCount
+                    recordingSessionId = sessionId
                 )
             )
             saved += entity

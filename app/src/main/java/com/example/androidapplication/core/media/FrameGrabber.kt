@@ -1,14 +1,10 @@
 package com.example.androidapplication.core.media
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Matrix
-import android.graphics.Paint
 import android.opengl.GLES20
 import android.os.Handler
 import android.os.HandlerThread
-import com.example.androidapplication.core.data.PrivacyZone
-import com.example.androidapplication.core.media.MaskGeometry.toRect
 import com.example.androidapplication.core.webrtc.WhepSession
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -98,18 +94,4 @@ class FrameGrabber(private val eglContext: EglBase.Context) {
     fun release() {
         thread.quitSafely()
     }
-}
-
-/** 활성 존을 불투명한 검정 사각형으로 픽셀에 직접 그려 넣는다. */
-fun burnMasks(bitmap: Bitmap, zones: List<PrivacyZone>): Int {
-    val active = MaskGeometry.active(zones)
-    if (active.isEmpty()) return 0
-    val canvas = Canvas(bitmap)
-    val paint = Paint().apply {
-        color = android.graphics.Color.BLACK
-        style = Paint.Style.FILL
-        isAntiAlias = false
-    }
-    active.forEach { canvas.drawRect(MaskGeometry.toPixels(it, bitmap.width, bitmap.height).toRect(), paint) }
-    return active.size
 }

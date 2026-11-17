@@ -11,8 +11,6 @@ import com.example.androidapplication.core.common.Mac
 import com.example.androidapplication.core.common.UiMessageBus
 import com.example.androidapplication.core.data.Camera
 import com.example.androidapplication.core.data.DeviceRepository
-import com.example.androidapplication.core.data.PrivacyZone
-import com.example.androidapplication.core.data.PrivacyZoneRepository
 import com.example.androidapplication.core.data.SettingsRepository
 import com.example.androidapplication.core.designsystem.*
 import com.example.androidapplication.core.vpn.VpnMonitor
@@ -21,7 +19,6 @@ import com.example.androidapplication.core.webrtc.StreamUrlResolver
 import com.example.androidapplication.core.webrtc.WebRtcEngine
 import com.example.androidapplication.core.webrtc.WhepSessionFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 
 @HiltViewModel
@@ -29,7 +26,6 @@ class MultiviewViewModel @Inject constructor(
     private val devices: DeviceRepository,
     private val bus: UiMessageBus,
     private val resolver: StreamUrlResolver,
-    private val zoneRepository: PrivacyZoneRepository,
     val sessions: WhepSessionFactory,
     vpn: VpnMonitor,
     engine: WebRtcEngine,
@@ -41,7 +37,6 @@ class MultiviewViewModel @Inject constructor(
     val vpnUsable = vpn.usable
 
     fun subStreamUrl(camera: Camera): String? = resolver.resolve(camera, StreamQuality.Sub)
-    fun zones(mac: String): Flow<List<PrivacyZone>> = zoneRepository.observe(mac)
 
     suspend fun poll(first: Boolean): Boolean = try {
         devices.refresh(silent = !first)

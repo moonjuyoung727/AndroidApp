@@ -3,7 +3,19 @@ package com.example.androidapplication.feature.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,9 +28,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -407,6 +421,10 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
     val stream by vm.streamState.collectAsStateWithLifecycle()
     val frame by vm.frameSize.collectAsStateWithLifecycle()
     val applyStatus by vm.applyStatus.collectAsStateWithLifecycle()
+    val selectedId by vm.selectedId.collectAsStateWithLifecycle()
+    // 이름을 수정 중인 영역. 다른 영역을 선택하면 수정을 끝낸다
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(selectedId) { if (editingId != selectedId) editingId = null }
     var pendingCamera by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
@@ -454,9 +472,13 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
                         onDragCancel = { dragStart = null; dragNow = null }
                     )
                 }
+                .pointerInput(Unit) {
+                    // 영상 위를 탭하면 그 위치의 영역이 선택된다
+                    detectTapGestures { p -> vm.selectZoneAt(p.x / size.width, p.y / size.height) }
+                }
         ) {
             if (session != null) VideoLayer(session, vm.eglContext, Modifier.fillMaxSize())
-            ZoneOutlines(zones, dragStart, dragNow)
+            ZoneOutlines(zones, selectedId, dragStart, dragNow)
             if (stream != StreamState.Connected) {
                 Text(
                     when {
@@ -468,18 +490,36 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
                 )
             }
         }
-        NoticeBox("영상 위를 드래그해 가릴 영역을 추가하세요. (최대 ${PrivacyZoneLimits.MAX_ZONES}개)")
+        NoticeBox("영상 위를 드래그해 가릴 영역을 추가하세요. (최대 ${PrivacyZoneLimits.MAX_ZONES}개)\n선택한 영역의 이름을 한 번 더 누르면 이름을 바꿀 수 있습니다.")
 
         if (zones.isNotEmpty()) ListGroup {
             zones.forEachIndexed { index, zone ->
                 if (index > 0) HorizontalDivider(Modifier.padding(start = 20.dp), color = NeuLine)
-                Column(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        NeuTextField(zone.name, { v -> vm.editZone(zone.id) { it.copy(name = v.take(PrivacyZoneLimits.NAME_MAX)) } }, "이름", Modifier.weight(1f))
-                        DimIconButton(Icons.Default.Close, "${zone.name} 삭제", { vm.removeZone(zone.id) }, tint = NeuDanger)
-                    }
+                // 라벨 · 이름 · 활성화 · 삭제를 한 줄에. 행을 누르면 선택만 하고 키보드는 띄우지 않는다
+                // 이미 선택된 영역의 이름 칸을 한 번 더 누르면 그때 이름을 수정한다
+                val selected = zone.id == selectedId
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(if (selected) NeuSurfaceStrong else Color.Transparent)
+                        .clickable { vm.selectZone(zone.id) }
+                        .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("영역 이름", color = NeuMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    ZoneNameField(
+                        name = zone.name,
+                        editing = zone.id == editingId,
+                        selected = selected,
+                        onClick = { if (selected) editingId = zone.id else vm.selectZone(zone.id) },
+                        onChange = { v -> vm.editZone(zone.id) { it.copy(name = v.take(PrivacyZoneLimits.NAME_MAX)) } },
+                        onDone = { if (editingId == zone.id) editingId = null },
+                        modifier = Modifier.weight(1f)
+                    )
+                    NeuSwitch(zone.enabled, { v -> vm.editZone(zone.id) { it.copy(enabled = v) } }, "${zone.name} 활성화")
+                    DimIconButton(Icons.Default.Close, "${zone.name} 삭제", { vm.removeZone(zone.id) }, tint = NeuDanger)
                 }
-                SettingToggle("활성화", null, zone.enabled, { v -> vm.editZone(zone.id) { it.copy(enabled = v) } })
             }
         }
 
@@ -498,16 +538,67 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
     if (confirmLeave) ConfirmDialog("저장되지 않음", "저장하지 않은 변경 사항이 있습니다. 나가시겠습니까?", "나가기", onConfirm = { confirmLeave = false; nav.popBackStack() }, onDismiss = { confirmLeave = false })
 }
 
+/**
+ * 한 줄짜리 영역 이름 칸. 평소에는 글자만 보여 줘서 눌러도 키보드가 뜨지 않는다.
+ * [editing]일 때만 입력창이 되어 포커스와 키보드를 가져가고, 완료를 누르거나 포커스를 잃으면 [onDone].
+ */
 @Composable
-private fun BoxScope.ZoneOutlines(zones: List<PrivacyZone>, dragStart: Offset?, dragNow: Offset?) {
+private fun ZoneNameField(
+    name: String,
+    editing: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onChange: (String) -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    var hadFocus by remember { mutableStateOf(false) }
+    val box = modifier
+        .heightIn(min = 40.dp)
+        .clip(NeuSmallShape)
+        .background(NeuSurface)
+        .border(1.dp, if (editing) NeuAccent else if (selected) NeuBorder else Color.Transparent, NeuSmallShape)
+    if (editing) {
+        LaunchedEffect(Unit) { focus.requestFocus() }
+        BasicTextField(
+            value = name,
+            onValueChange = onChange,
+            modifier = box
+                .focusRequester(focus)
+                .onFocusChanged { state ->
+                    if (hadFocus && !state.isFocused) onDone()
+                    hadFocus = state.isFocused
+                },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = NeuAccent),
+            cursorBrush = SolidColor(NeuAccent),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            // 포커스를 놓으면 키보드가 내려가고 onFocusChanged에서 onDone이 불린다
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            decorationBox = { inner -> Box(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) { inner() } }
+        )
+    } else {
+        Box(box.clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
+            Text(name, color = NeuAccent, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.ZoneOutlines(zones: List<PrivacyZone>, selectedId: String?, dragStart: Offset?, dragNow: Offset?) {
     Canvas(Modifier.matchParentSize()) {
-        // 윤곽선만 그린다. 실제 가림은 보드가 한다. 비활성 영역은 흐리게
-        zones.forEach { z ->
+        // 윤곽선만 그린다. 실제 가림은 보드가 한다
+        // 기본은 회색, 선택된 영역만 포인트 컬러로 굵게. 비활성 영역은 점선. 선택 영역은 다른 영역 위에 그린다
+        val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+        zones.sortedBy { it.id == selectedId }.forEach { z ->
+            val selected = z.id == selectedId
             drawRect(
-                if (z.enabled) NeuAccent else NeuMuted.copy(alpha = 0.6f),
+                if (selected) NeuAccent else NeuMuted.copy(alpha = if (z.enabled) 0.9f else 0.6f),
                 Offset(z.x * size.width, z.y * size.height),
                 Size(z.width * size.width, z.height * size.height),
-                style = Stroke(1.5.dp.toPx())
+                style = Stroke((if (selected) 2.5.dp else 1.5.dp).toPx(), pathEffect = if (z.enabled) null else dash)
             )
         }
         if (dragStart != null && dragNow != null) {

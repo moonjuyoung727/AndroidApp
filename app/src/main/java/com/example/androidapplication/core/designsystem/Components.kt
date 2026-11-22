@@ -406,21 +406,26 @@ fun SettingToggle(
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (description != null) Text(description, color = NeuMuted, style = MaterialTheme.typography.bodySmall)
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = title },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = NeuBg,
-                checkedTrackColor = NeuAccent,
-                checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = NeuMuted,
-                uncheckedTrackColor = NeuSurfaceStrong,
-                uncheckedBorderColor = Color.Transparent
-            )
-        )
+        NeuSwitch(checked, onCheckedChange, title, enabled = enabled)
     }
+}
+
+@Composable
+fun NeuSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, description: String, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier.semantics { contentDescription = description },
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = NeuBg,
+            checkedTrackColor = NeuAccent,
+            checkedBorderColor = Color.Transparent,
+            uncheckedThumbColor = NeuMuted,
+            uncheckedTrackColor = NeuSurfaceStrong,
+            uncheckedBorderColor = Color.Transparent
+        )
+    )
 }
 
 @Composable

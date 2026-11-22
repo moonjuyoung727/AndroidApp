@@ -430,6 +430,9 @@ class PrivacyZoneViewModel @Inject constructor(
     private val _draft = MutableStateFlow<List<PrivacyZone>>(emptyList())
     val draft = _draft.asStateFlow()
     val isDirty = combine(_saved, _draft) { a, b -> a != b }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** 영상 위에서 포인트 컬러로 강조할 영역 */
+    private val _selectedId = MutableStateFlow<String?>(null)
+    val selectedId = _selectedId.asStateFlow()
     private val _result = MutableStateFlow<String?>(null)
     val result = _result.asStateFlow()
     private val _saving = MutableStateFlow(false)
@@ -479,7 +482,17 @@ class PrivacyZoneViewModel @Inject constructor(
         }
         _saved.value = zones
         _draft.value = zones
+        _selectedId.value = null
         _result.value = null
+    }
+
+    fun selectZone(id: String) {
+        _selectedId.value = id
+    }
+
+    /** 정규화 좌표 (x, y)를 포함하는 영역을 선택한다. 겹치면 나중에 그려진(위에 있는) 영역 */
+    fun selectZoneAt(x: Float, y: Float) {
+        _selectedId.value = _draft.value.lastOrNull { x >= it.x && x <= it.x + it.width && y >= it.y && y <= it.y + it.height }?.id
     }
 
     fun setStarted(value: Boolean) {
@@ -494,6 +507,7 @@ class PrivacyZoneViewModel @Inject constructor(
     fun addZone(x1: Float, y1: Float, x2: Float, y2: Float) {
         ZoneDraft.tryAdd(_draft.value, x1, y1, x2, y2) { UUID.randomUUID().toString() }?.let {
             _draft.value = it
+            _selectedId.value = it.lastOrNull()?.id
             _result.value = null
         } ?: run {
             if (_draft.value.size >= PrivacyZoneLimits.MAX_ZONES) bus.show("프라이버시 존은 최대 ${PrivacyZoneLimits.MAX_ZONES}개까지 추가할 수 있습니다.")
@@ -508,11 +522,13 @@ class PrivacyZoneViewModel @Inject constructor(
 
     fun removeZone(id: String) {
         _draft.value = _draft.value.filterNot { it.id == id }
+        if (_selectedId.value == id) _selectedId.value = null
         _result.value = null
     }
 
     fun revert() {
         _draft.value = _saved.value
+        if (_saved.value.none { it.id == _selectedId.value }) _selectedId.value = null
         _result.value = null
     }
 
@@ -530,7 +546,12 @@ class PrivacyZoneViewModel @Inject constructor(
                 // 새 존은 서버가 ID를 새로 발급하므로 응답으로 바꿔 둔다. 그래야 다음 저장에서 ID가 유지된다
                 val saved = repository.save(mac, draft)
                 _saved.value = saved
-                if (_draft.value == draft) _draft.value = saved
+                if (_draft.value == draft) {
+                    // 서버가 새 ID를 줬을 수 있으므로 선택은 같은 위치(순서)의 영역으로 옮긴다
+                    val index = draft.indexOfFirst { it.id == _selectedId.value }
+                    _draft.value = saved
+                    _selectedId.value = saved.getOrNull(index)?.id
+                }
                 _result.value = ZONE_SAVED_MESSAGE
                 if (repository.isServerApplied) {
                     followUp?.cancel()

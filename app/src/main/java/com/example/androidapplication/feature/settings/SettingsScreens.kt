@@ -406,7 +406,7 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
     val session by vm.session.collectAsStateWithLifecycle()
     val stream by vm.streamState.collectAsStateWithLifecycle()
     val frame by vm.frameSize.collectAsStateWithLifecycle()
-    var preview by rememberSaveable { mutableStateOf(true) }
+    val applyStatus by vm.applyStatus.collectAsStateWithLifecycle()
     var pendingCamera by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     var dragStart by remember { mutableStateOf<Offset?>(null) }
@@ -455,7 +455,7 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
                     )
                 }
         ) {
-            if (session != null) VideoLayer(session, vm.eglContext, if (preview) zones else emptyList(), Modifier.fillMaxSize())
+            if (session != null) VideoLayer(session, vm.eglContext, Modifier.fillMaxSize())
             ZoneOutlines(zones, dragStart, dragNow)
             if (stream != StreamState.Connected) {
                 Text(
@@ -470,10 +470,9 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
         }
         NoticeBox("영상 위를 드래그해 가릴 영역을 추가하세요. (최대 ${PrivacyZoneLimits.MAX_ZONES}개)")
 
-        ListGroup {
-            SettingToggle("마스킹 미리보기", null, preview, { preview = it })
-            zones.forEach { zone ->
-                HorizontalDivider(Modifier.padding(start = 20.dp), color = NeuLine)
+        if (zones.isNotEmpty()) ListGroup {
+            zones.forEachIndexed { index, zone ->
+                if (index > 0) HorizontalDivider(Modifier.padding(start = 20.dp), color = NeuLine)
                 Column(Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         NeuTextField(zone.name, { v -> vm.editZone(zone.id) { it.copy(name = v.take(PrivacyZoneLimits.NAME_MAX)) } }, "이름", Modifier.weight(1f))
@@ -484,7 +483,8 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
             }
         }
 
-        result?.let { NoticeBox(it, color = if (it == "저장되었습니다.") NeuSuccess else NeuDanger) }
+        result?.let { NoticeBox(it, color = if (it == ZONE_SAVED_MESSAGE) NeuSuccess else NeuDanger) }
+        applyStatus?.let { NoticeBox("보드 적용 상태: ${it.label}", color = it.color) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NeuOutlineButton("되돌리기", vm::revert, Modifier.weight(1f), enabled = dirty && !saving)
             PrimaryButton(if (saving) "저장 중..." else "저장", vm::save, Modifier.weight(1f), enabled = dirty && !saving)
@@ -501,8 +501,14 @@ fun PrivacyZoneScreen(nav: NavHostController, vm: PrivacyZoneViewModel = hiltVie
 @Composable
 private fun BoxScope.ZoneOutlines(zones: List<PrivacyZone>, dragStart: Offset?, dragNow: Offset?) {
     Canvas(Modifier.matchParentSize()) {
+        // 윤곽선만 그린다. 실제 가림은 보드가 한다. 비활성 영역은 흐리게
         zones.forEach { z ->
-            drawRect(NeuAccent, Offset(z.x * size.width, z.y * size.height), Size(z.width * size.width, z.height * size.height), style = Stroke(1.5.dp.toPx()))
+            drawRect(
+                if (z.enabled) NeuAccent else NeuMuted.copy(alpha = 0.6f),
+                Offset(z.x * size.width, z.y * size.height),
+                Size(z.width * size.width, z.height * size.height),
+                style = Stroke(1.5.dp.toPx())
+            )
         }
         if (dragStart != null && dragNow != null) {
             drawRect(

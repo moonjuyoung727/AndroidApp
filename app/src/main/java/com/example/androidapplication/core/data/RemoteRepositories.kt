@@ -170,7 +170,9 @@ fun DeviceDto.toCamera() = Camera(
     latestEventTime = latestEventTime,
     thumbnailUrl = thumbnailUrl,
     webrtcUrl = webrtcUrl,
-    webrtcUrlSub = webrtcUrlSub
+    webrtcUrlSub = webrtcUrlSub,
+    configVersion = configVersion,
+    appliedConfigVersion = appliedConfigVersion
 )
 
 /** 배열 또는 { devices|items: [...] } 응답을 읽는다. */

@@ -86,5 +86,6 @@ interface PrivacyZoneRepository {
     fun observe(mac: String): Flow<List<PrivacyZone>>
     /** 저장 직전에 부른다. 존 정보를 얻지 못하면 예외를 던져 저장을 막는다 (fail closed). */
     suspend fun current(mac: String): List<PrivacyZone>
-    suspend fun save(mac: String, zones: List<PrivacyZone>, cameraOnline: Boolean)
+    /** 저장 후 목록을 돌려준다. 새 존은 서버가 발급한 ID로, 순서는 서버 응답 순서로 바뀌어 있다. */
+    suspend fun save(mac: String, zones: List<PrivacyZone>): List<PrivacyZone>
 }

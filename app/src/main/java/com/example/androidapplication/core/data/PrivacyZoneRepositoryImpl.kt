@@ -8,21 +8,21 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
-import com.example.androidapplication.core.common.ApiError
 import com.example.androidapplication.core.common.READ_TIMEOUT_MS
 import com.example.androidapplication.core.config.FeatureFlags
 import com.example.androidapplication.core.network.ApiCaller
 import com.example.androidapplication.core.network.PrivacyZoneApi
 import com.example.androidapplication.core.network.PrivacyZoneBody
 import com.example.androidapplication.core.network.PrivacyZoneDto
+import com.example.androidapplication.core.network.PrivacyZonesRequest
 import com.example.androidapplication.core.network.ZoneCoordinatesDto
-import com.example.androidapplication.core.network.ZoneDeleteRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-const val ZONE_APPLY_FAILED = "보드 적용에 실패했습니다. 카메라 연결 상태를 확인하세요."
+/** 저장 요청이 실패했을 때의 일반 문구. 보드 적용 여부는 [ZoneApplyStatus]로 따로 보여 준다. */
+const val ZONE_APPLY_FAILED = "프라이버시 존 저장에 실패했습니다."
 
 @Entity(tableName = "privacy_zones", indices = [Index("mac")])
 data class PrivacyZoneEntity(
@@ -72,12 +72,22 @@ object PrivacyZoneMapper {
         color = dto.color
     )
 
+    /** zone_id는 존이 가진 ID를 그대로 보낸다. 앱이 새로 만든 UUID는 서버가 모르는 ID라서 서버가 새로 발급한다. */
     fun toBody(zone: PrivacyZone): PrivacyZoneBody = PrivacyZoneBody(
+        zoneId = zone.id.ifBlank { null },
         zoneName = zone.name,
         isActive = zone.enabled,
         color = zone.color,
-        coordinates = ZoneCoordinatesDto(zone.x, zone.y, zone.x + zone.width, zone.y + zone.height)
+        coordinates = ZoneCoordinatesDto(
+            ratio(zone.x.toDouble()),
+            ratio(zone.y.toDouble()),
+            ratio(zone.x.toDouble() + zone.width.toDouble()),
+            ratio(zone.y.toDouble() + zone.height.toDouble())
+        )
     )
+
+    /** 소수 6자리로 반올림한 뒤 0~1로 보정한다. x + width가 1.0000001이 되면 서버가 x2 ≤ 1 위반으로 400을 낸다. */
+    fun ratio(value: Double): Float = (Math.round(value * 1e6) / 1e6).coerceIn(0.0, 1.0).toFloat()
 
     fun toEntity(mac: String, zone: PrivacyZone, position: Int) = PrivacyZoneEntity(
         zone.id, mac, zone.name, zone.x, zone.y, zone.width, zone.height, zone.enabled, zone.color, position
@@ -101,31 +111,29 @@ class PrivacyZoneRepositoryImpl @Inject constructor(
     override suspend fun current(mac: String): List<PrivacyZone> {
         if (FeatureFlags.privacyZones) {
             val remote = caller.call("프라이버시 존 조회 실패", timeoutMs = READ_TIMEOUT_MS) { api.list(mac) }.map(PrivacyZoneMapper::fromDto)
-            dao.replace(mac, remote.mapIndexed { i, z -> PrivacyZoneMapper.toEntity(mac, z, i) })
+            cache(mac, remote)
             return remote
         }
         return dao.list(mac).map(PrivacyZoneMapper::fromEntity)
     }
 
-    override suspend fun save(mac: String, zones: List<PrivacyZone>, cameraOnline: Boolean) {
-        if (!cameraOnline) throw ApiError(0, null, ZONE_APPLY_FAILED)
-        if (FeatureFlags.privacyZones) saveRemote(mac, zones)
-        dao.replace(mac, zones.mapIndexed { i, z -> PrivacyZoneMapper.toEntity(mac, z, i) })
+    /**
+     * PUT 한 번으로 추가·수정·삭제를 반영하고 서버가 돌려준 목록(서버 ID, 서버 순서)을 돌려준다.
+     * 보드가 오프라인이어도 저장한다. 적용은 보드가 돌아온 뒤에 된다 (UC1-E4).
+     */
+    override suspend fun save(mac: String, zones: List<PrivacyZone>): List<PrivacyZone> {
+        val saved = if (FeatureFlags.privacyZones) {
+            caller.call(ZONE_APPLY_FAILED, statusFallback = mapOf(400 to ZoneSaveErrors.BAD_REQUEST_MESSAGE)) {
+                api.replace(mac, PrivacyZonesRequest(zones.map(PrivacyZoneMapper::toBody)))
+            }.map(PrivacyZoneMapper::fromDto)
+        } else {
+            zones
+        }
+        cache(mac, saved)
+        return saved
     }
 
-    // 명세에 일괄 저장이 없어서 서버 목록과 비교해 나눠 호출한다
-    private suspend fun saveRemote(mac: String, zones: List<PrivacyZone>) {
-        caller.call(ZONE_APPLY_FAILED) {
-            val server = api.list(mac).map(PrivacyZoneMapper::fromDto).associateBy { it.id }
-            val removed = server.keys - zones.map { it.id }.toSet()
-            if (removed.isNotEmpty()) api.delete(mac, ZoneDeleteRequest(removed.toList()))
-            zones.forEach { zone ->
-                val existing = server[zone.id]
-                when {
-                    existing == null -> api.add(mac, PrivacyZoneMapper.toBody(zone))
-                    existing != zone -> api.update(mac, zone.id, PrivacyZoneMapper.toBody(zone))
-                }
-            }
-        }
-    }
+    // 서버 응답 순서를 그대로 position으로 둔다 (position은 캐시 정렬에만 쓴다)
+    private suspend fun cache(mac: String, zones: List<PrivacyZone>) =
+        dao.replace(mac, zones.mapIndexed { i, z -> PrivacyZoneMapper.toEntity(mac, z, i) })
 }

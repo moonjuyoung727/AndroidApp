@@ -3,17 +3,12 @@ package com.example.androidapplication.core.webrtc
 import android.content.Context
 import android.graphics.SurfaceTexture
 import android.view.TextureView
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.androidapplication.core.data.PrivacyZone
 import org.webrtc.EglBase
 import org.webrtc.EglRenderer
 import org.webrtc.GlRectDrawer
@@ -66,13 +61,13 @@ class TextureVideoRenderer(context: Context) : TextureView(context), TextureView
 
 /**
  * 영상을 그린다. 바깥에서 비율과 변환을 정한다.
- * 보드가 마스킹한 영상을 보내므로 [zones]는 프라이버시 존 설정 화면의 미리보기에서만 넘긴다.
+ * 마스킹은 보드가 한다. 앱이 영상 위를 칠하면 보드에 적용되지 않았을 때도 가려진 것처럼 보이므로 덧그리지 않는다.
+ * 존 편집 화면은 영역 윤곽선만 따로 그린다.
  */
 @Composable
 fun VideoLayer(
     session: WhepSession?,
     eglContext: EglBase.Context,
-    zones: List<PrivacyZone> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val rendererHolder = androidx.compose.runtime.remember { arrayOfNulls<TextureVideoRenderer>(1) }
@@ -91,20 +86,6 @@ fun VideoLayer(
                     renderer.clear()
                 }
             }
-        }
-        PrivacyMask(zones, Modifier.fillMaxSize())
-    }
-}
-
-@Composable
-fun PrivacyMask(zones: List<PrivacyZone>, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        zones.filter { it.enabled }.forEach { zone ->
-            drawRect(
-                color = Color.Black,
-                topLeft = Offset(zone.x * size.width, zone.y * size.height),
-                size = Size(zone.width * size.width, zone.height * size.height)
-            )
         }
     }
 }

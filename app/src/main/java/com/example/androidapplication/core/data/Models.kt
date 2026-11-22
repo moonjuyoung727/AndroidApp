@@ -30,7 +30,11 @@ data class Camera(
     val latestEventTime: String? = null,
     val thumbnailUrl: String? = null,
     val webrtcUrl: String? = null,
-    val webrtcUrlSub: String? = null
+    val webrtcUrlSub: String? = null,
+    /** 서버가 저장한 프라이버시 존 설정 버전. 서버가 보내지 않으면 null */
+    val configVersion: Int? = null,
+    /** 보드가 적용한 설정 버전. [configVersion]과 같으면 적용됨 */
+    val appliedConfigVersion: Int? = null
 ) {
     val isOnline: Boolean get() = status == "online"
 }

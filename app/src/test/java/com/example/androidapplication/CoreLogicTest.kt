@@ -41,6 +41,14 @@ import com.example.androidapplication.feature.dashboard.sortVpnIssuesFirst
 import com.example.androidapplication.feature.multiview.channelLayout
 import com.example.androidapplication.feature.multiview.matchesCamera
 import com.example.androidapplication.feature.settings.ZoneDraft
+import com.example.androidapplication.core.common.ApiError
+import com.example.androidapplication.core.data.ZoneApply
+import com.example.androidapplication.core.data.ZoneApplyStatus
+import com.example.androidapplication.core.data.ZoneApplyTrack
+import com.example.androidapplication.core.data.ZoneSaveErrors
+import com.example.androidapplication.core.network.PrivacyZonesRequest
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -217,7 +225,8 @@ class PrivacyZoneTest {
         var id = 0
         fun add(list: List<PrivacyZone>) = ZoneDraft.tryAdd(list, 0f, 0f, 0.5f, 0.5f) { "${id++}" }
         assertNull(ZoneDraft.tryAdd(emptyList(), 0f, 0f, 0.02f, 0.5f) { "x" })
-        assertEquals(20, PrivacyZoneLimits.MAX_ZONES)
+        assertEquals(8, PrivacyZoneLimits.MAX_ZONES)
+        assertEquals(30, PrivacyZoneLimits.NAME_MAX)
         var zones = emptyList<PrivacyZone>()
         repeat(PrivacyZoneLimits.MAX_ZONES) { zones = add(zones)!! }
         assertEquals((1..PrivacyZoneLimits.MAX_ZONES).map { "영역 $it" }, zones.map { it.name })
@@ -229,6 +238,105 @@ class PrivacyZoneTest {
         assertEquals(0.5f, z.x, 1e-5f)
         assertEquals(0f, z.y, 1e-5f)
         assertEquals(0.5f, z.width, 1e-5f)
+    }
+
+    @Test fun body_keeps_zone_id_and_clamps_rounded_coordinates() {
+        val zone = PrivacyZone("local-uuid", "끝", 0.7f, 0.9000001f, 0.3000001f, 0.1f, enabled = true)
+        val body = PrivacyZoneMapper.toBody(zone)
+        assertEquals("local-uuid", body.zoneId)
+        assertTrue(body.coordinates.x2 <= 1f)
+        assertTrue(body.coordinates.y2 <= 1f)
+        assertEquals(1f, body.coordinates.x2, 0f)
+        assertEquals(0.9f, body.coordinates.y1, 0f)
+        assertEquals(0f, PrivacyZoneMapper.ratio(-0.0000004), 0f)
+    }
+
+    @Test fun request_sends_only_allowed_fields_and_omits_null_color() {
+        val zone = PrivacyZone("z1", "문", 0.1f, 0.2f, 0.3f, 0.4f, enabled = false)
+        val json = AppJson.encodeToString(PrivacyZonesRequest.serializer(), PrivacyZonesRequest(listOf(PrivacyZoneMapper.toBody(zone))))
+        val item = AppJson.parseToJsonElement(json).jsonObject["zones"]!!.jsonArray.single().jsonObject
+        assertEquals(setOf("zone_id", "zone_name", "is_active", "coordinates"), item.keys)
+        assertEquals("""{"zones":[]}""", AppJson.encodeToString(PrivacyZonesRequest.serializer(), PrivacyZonesRequest(emptyList())))
+    }
+
+    @Test fun validate_checks_name_and_size_before_save() {
+        val ok = PrivacyZone("a", "문", 0f, 0f, 0.5f, 0.5f, enabled = true)
+        assertNull(ZoneDraft.validate(listOf(ok)))
+        assertNull(ZoneDraft.validate(emptyList()))
+        assertNotNull(ZoneDraft.validate(listOf(ok.copy(name = " "))))
+        assertNotNull(ZoneDraft.validate(listOf(ok.copy(name = "가".repeat(31)))))
+        assertNotNull(ZoneDraft.validate(listOf(ok.copy(width = 0.02f))))
+        assertNotNull(ZoneDraft.validate(List(9) { ok.copy(id = "$it") }))
+    }
+}
+
+class ZoneApplyStatusTest {
+    private val saved = Instant.parse("2026-11-18T00:00:00Z")
+    private fun cam(config: Int?, applied: Int?, online: Boolean) = Camera(
+        deviceId = "d", mac = "AABBCCDDEEFF", name = "", location = "",
+        status = if (online) "online" else "offline", configVersion = config, appliedConfigVersion = applied
+    )
+
+    @Test fun judge_by_equality_only() {
+        assertEquals(ZoneApplyStatus.Applied, ZoneApply.judge(cam(3, 3, online = false)))
+        assertEquals(ZoneApplyStatus.Pending, ZoneApply.judge(cam(3, 2, online = true)))
+        assertEquals(ZoneApplyStatus.Offline, ZoneApply.judge(cam(3, 2, online = false)))
+        // 서버 버전이 낮아져도 같지 않으면 적용 대기
+        assertEquals(ZoneApplyStatus.Pending, ZoneApply.judge(cam(1, 5, online = true)))
+        assertNull(ZoneApply.judge(cam(null, null, online = true)))
+        assertNull(ZoneApply.judge(null))
+    }
+
+    @Test fun list_from_before_save_is_not_trusted() {
+        val track = ZoneApplyTrack(saved)
+        val before = saved.minusSeconds(1)
+        assertEquals(ZoneApplyStatus.Pending, ZoneApply.status(cam(2, 2, online = true), before, track))
+        assertEquals(ZoneApplyStatus.Offline, ZoneApply.status(cam(2, 2, online = false), before, track))
+        assertEquals(ZoneApplyStatus.Applied, ZoneApply.status(cam(3, 3, online = true), saved.plusSeconds(3), track))
+    }
+
+    @Test fun delayed_only_when_online_and_time_passed() {
+        val expired = ZoneApplyTrack(saved, expired = true)
+        val after = saved.plusSeconds(16)
+        assertEquals(ZoneApplyStatus.Delayed, ZoneApply.status(cam(3, 2, online = true), after, expired))
+        assertEquals(ZoneApplyStatus.Offline, ZoneApply.status(cam(3, 2, online = false), after, expired))
+        // 지연 뒤에도 두 버전이 같아지면 적용됨
+        assertEquals(ZoneApplyStatus.Applied, ZoneApply.status(cam(3, 3, online = true), after, expired))
+    }
+}
+
+class ZoneSaveErrorsTest {
+    private val zones = listOf(
+        PrivacyZone("a", "문", 0f, 0f, 0.5f, 0.5f, enabled = true),
+        PrivacyZone("b", "창", 0f, 0f, 0.5f, 0.5f, enabled = true)
+    )
+
+    @Test fun bad_request_lists_reasons_per_zone() {
+        val details = """[{"field":"zones[1].zone_name","message":"30자 이하"}]"""
+        val text = ZoneSaveErrors.describe(ApiError(400, "BAD_REQUEST", "잘못된 값", details), zones)
+        assertEquals("잘못된 값\n• 2번 영역(창) 이름: 30자 이하", text)
+    }
+
+    // 서버 errorHandler 형식: details = [{ index, field, reason }]
+    @Test fun server_details_combine_index_and_field() {
+        val details = """[{"index":1,"field":"coordinates","reason":"x1 must be less than x2"},{"index":0,"field":"zone_name","reason":"too long"}]"""
+        assertEquals(
+            listOf("2번 영역(창) 좌표: x1 must be less than x2", "1번 영역(문) 이름: too long"),
+            ZoneSaveErrors.reasons(details, zones)
+        )
+        assertEquals(listOf("3번 영역: unknown field"), ZoneSaveErrors.reasons("""[{"index":2,"reason":"unknown field"}]""", zones))
+        assertEquals(listOf("영역 목록: too many"), ZoneSaveErrors.reasons("""[{"field":"zones","reason":"too many"}]""", zones))
+    }
+
+    @Test fun reasons_accept_object_map_and_zone_id() {
+        assertEquals(listOf("1번 영역(문) 좌표 x2: ≤ 1"), ZoneSaveErrors.reasons("""{"zones.0.coordinates.x2":"≤ 1"}""", zones))
+        assertEquals(listOf("2번 영역(창): 중복"), ZoneSaveErrors.reasons("""[{"zone_id":"b","reason":"중복"}]""", zones))
+        assertEquals(emptyList<String>(), ZoneSaveErrors.reasons(null, zones))
+    }
+
+    @Test fun forbidden_and_not_found_have_own_messages() {
+        assertEquals(ZoneSaveErrors.FORBIDDEN_MESSAGE, ZoneSaveErrors.describe(ApiError(403, null, "x"), zones))
+        assertEquals(ZoneSaveErrors.NOT_FOUND_MESSAGE, ZoneSaveErrors.describe(ApiError(404, null, "x"), zones))
     }
 }
 

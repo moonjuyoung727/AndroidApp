@@ -94,7 +94,10 @@ data class DeviceDto(
     @SerialName("latest_event_time") val latestEventTime: String? = null,
     @SerialName("thumbnail_url") val thumbnailUrl: String? = null,
     @SerialName("webrtc_url") val webrtcUrl: String? = null,
-    @SerialName("webrtc_url_sub") val webrtcUrlSub: String? = null
+    @SerialName("webrtc_url_sub") val webrtcUrlSub: String? = null,
+    // 프라이버시 존 적용 상태 (ICD 2.6). 서버가 저장한 설정 버전 / 보드가 적용한 설정 버전. 보내지 않으면 판정하지 않는다
+    @SerialName("config_version") val configVersion: Int? = null,
+    @SerialName("applied_config_version") val appliedConfigVersion: Int? = null
 )
 
 @Serializable data class RegisterDeviceRequest(val mac: String, val name: String? = null, val location: String)
@@ -241,15 +244,17 @@ data class PrivacyZoneDto(
     val coordinates: ZoneCoordinatesDto = ZoneCoordinatesDto()
 )
 
+/** 서버가 받는 필드만 둔다 (그 외 필드가 있으면 400). [zoneId]가 서버가 모르는 ID면 서버가 새로 발급한다. */
 @Serializable
 data class PrivacyZoneBody(
+    @SerialName("zone_id") val zoneId: String? = null,
     @SerialName("zone_name") val zoneName: String,
     @SerialName("is_active") val isActive: Boolean,
     val color: String? = null,
     val coordinates: ZoneCoordinatesDto
 )
 
-@Serializable data class ZoneDeleteRequest(@SerialName("zone_ids") val zoneIds: List<String>)
+@Serializable data class PrivacyZonesRequest(val zones: List<PrivacyZoneBody>)
 
 /* 구독 · 결제 [명세 없음] */
 @Serializable

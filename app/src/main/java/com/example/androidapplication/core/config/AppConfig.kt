@@ -31,7 +31,6 @@ object FeatureFlags {
     val eventUpdate = false
     val deviceStatus = false
     val deviceUpdate = false
-    val privacyZones = false
     val cloudStorage = false
     val subscription = false
     val paymentMethods = false // Google Play 결제 정책 검토 전까지 끔
@@ -42,6 +41,9 @@ object FeatureFlags {
     val resetPassword = true
     val loginSessions = true
 
+    // ICD 2.6 프라이버시 존 일괄 저장 (PUT /devices/{mac}/privacy-zones)
+    val privacyZones = true
+
     // API 명세 없음 (사용자 정보·비밀번호 변경)
     val profileUpdate = false
     val passwordChange = false
@@ -50,9 +52,12 @@ object FeatureFlags {
     val embeddedVpnTunnel = false
 }
 
-/** 프라이버시 존 제한. 개수는 ICD 2.6.2(보드당 20개), 이름은 ICD 2.6.1 zone_name(30자). */
+/**
+ * 프라이버시 존 제한 (ICD 2.6). 개수는 보드당 8개 [TBR], 이름은 zone_name 1~30자.
+ * 최소 크기(가로·세로 각각 3%)는 서버가 검사하지 않으므로 앱이 검사한다.
+ */
 object PrivacyZoneLimits {
-    const val MAX_ZONES = 20
+    const val MAX_ZONES = 8
     const val MIN_SIZE = 0.03f
     const val NAME_MAX = 30
 }

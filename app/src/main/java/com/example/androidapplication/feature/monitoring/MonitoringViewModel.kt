@@ -12,6 +12,8 @@ import com.example.androidapplication.core.data.DeviceStatus
 import com.example.androidapplication.core.data.PrivacyZone
 import com.example.androidapplication.core.data.PrivacyZoneRepository
 import com.example.androidapplication.core.data.SettingsRepository
+import com.example.androidapplication.core.data.ZoneApplyStatus
+import com.example.androidapplication.core.data.ZoneApplyTracker
 import com.example.androidapplication.core.designsystem.ZoomView
 import com.example.androidapplication.core.media.CaptureManager
 import com.example.androidapplication.core.media.MediaLibrary
@@ -62,6 +64,7 @@ private const val STORAGE_CHECK_EVERY_TICKS = 10
 class MonitoringViewModel @Inject constructor(
     private val devices: DeviceRepository,
     private val zoneRepository: PrivacyZoneRepository,
+    zoneApply: ZoneApplyTracker,
     private val sessions: WhepSessionFactory,
     private val resolver: StreamUrlResolver,
     private val capture: CaptureManager,
@@ -116,6 +119,11 @@ class MonitoringViewModel @Inject constructor(
     private val _zones = MutableStateFlow<List<PrivacyZone>>(emptyList())
     val zones = _zones.asStateFlow()
 
+    /** 존 설정의 보드 적용 상태. 화면의 기기 목록 주기 갱신으로 바뀐다. */
+    val zoneApplyStatus: StateFlow<ZoneApplyStatus?> =
+        (if (zoneRepository.isServerApplied) zoneApply.status(mac) else flowOf(null))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     private val _status = MutableStateFlow<DeviceStatus?>(null)
     val deviceStatus = _status.asStateFlow()
 
@@ -167,6 +175,13 @@ class MonitoringViewModel @Inject constructor(
             zoneRepository.observe(mac)
                 .catch { }
                 .collect { _zones.value = it }
+        }
+        // 서버 연동이면 캐시를 서버 목록으로 한 번 갱신한다 (실패하면 캐시 개수를 그대로 보여 준다)
+        if (zoneRepository.isServerApplied) viewModelScope.launch {
+            try {
+                zoneRepository.current(mac)
+            } catch (_: AppError) {
+            }
         }
         viewModelScope.launch {
             _status.value = runCatching { devices.status(mac) }.getOrNull()

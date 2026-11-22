@@ -24,6 +24,7 @@ import com.example.androidapplication.navigation.CameraSettingsRoute
 import com.example.androidapplication.navigation.PrivacyZoneRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -374,6 +375,8 @@ class LoginSessionsViewModel @Inject constructor(
     }
 }
 
+const val ZONE_SAVED_MESSAGE = "저장되었습니다."
+
 /** 프라이버시 존 초안 편집. 순수 함수로 두어 단위 테스트한다. */
 object ZoneDraft {
     /** 드래그 영역을 0~1로 자르고, 최소 크기 미만이거나 개수를 넘으면 null. */
@@ -385,6 +388,18 @@ object ZoneDraft {
         val bottom = maxOf(y1, y2).coerceIn(0f, 1f)
         if (right - left < PrivacyZoneLimits.MIN_SIZE || bottom - top < PrivacyZoneLimits.MIN_SIZE) return null
         return zones + PrivacyZone(idFactory(), nextName(zones), left, top, right - left, bottom - top, enabled = true)
+    }
+
+    /** 저장 전 검사 (ICD 2.6: 개수, 이름 1~30자, 최소 크기). 문제가 없으면 null. 서버는 최소 크기를 검사하지 않는다. */
+    fun validate(zones: List<PrivacyZone>): String? {
+        if (zones.size > PrivacyZoneLimits.MAX_ZONES) return "프라이버시 존은 최대 ${PrivacyZoneLimits.MAX_ZONES}개까지 저장할 수 있습니다."
+        zones.forEachIndexed { i, z ->
+            val label = "${i + 1}번 영역"
+            if (z.name.isBlank()) return "$label: 이름을 입력하세요."
+            if (z.name.length > PrivacyZoneLimits.NAME_MAX) return "$label: 이름은 ${PrivacyZoneLimits.NAME_MAX}자 이하로 입력하세요."
+            if (z.width < PrivacyZoneLimits.MIN_SIZE || z.height < PrivacyZoneLimits.MIN_SIZE) return "$label: 영역이 너무 작습니다."
+        }
+        return null
     }
 
     private fun nextName(zones: List<PrivacyZone>): String {
@@ -402,6 +417,7 @@ class PrivacyZoneViewModel @Inject constructor(
     private val resolver: StreamUrlResolver,
     private val factory: WhepSessionFactory,
     private val bus: UiMessageBus,
+    private val applyTracker: ZoneApplyTracker,
     engine: WebRtcEngine
 ) : ViewModel() {
     val eglContext = engine.eglContext
@@ -427,6 +443,12 @@ class PrivacyZoneViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, StreamState.Idle)
     val frameSize = _session.flatMapLatest { it?.frameSize ?: flowOf(null) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** 보드 적용 상태. 서버 연동 전이거나 서버가 버전을 보내지 않으면 null */
+    val applyStatus: StateFlow<ZoneApplyStatus?> = _mac
+        .flatMapLatest { mac -> if (mac == null || !repository.isServerApplied) flowOf(null) else applyTracker.status(mac) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private var followUp: Job? = null
 
     init {
         viewModelScope.launch {
@@ -465,6 +487,7 @@ class PrivacyZoneViewModel @Inject constructor(
     }
 
     fun select(mac: String) {
+        if (mac != _mac.value) followUp?.cancel()
         _mac.value = mac
     }
 
@@ -493,17 +516,28 @@ class PrivacyZoneViewModel @Inject constructor(
         _result.value = null
     }
 
+    /** 보드가 오프라인이어도 저장한다 (적용은 복귀 후). 실패하면 편집 내용을 그대로 둔다. */
     fun save() {
         val mac = _mac.value ?: return
-        val online = devices.cameras.value.items.firstOrNull { it.mac == mac }?.isOnline == true
+        val draft = _draft.value
+        ZoneDraft.validate(draft)?.let {
+            _result.value = it
+            return
+        }
         viewModelScope.launch {
             _saving.value = true
             try {
-                repository.save(mac, _draft.value, online)
-                _saved.value = _draft.value
-                _result.value = "저장되었습니다."
+                // 새 존은 서버가 ID를 새로 발급하므로 응답으로 바꿔 둔다. 그래야 다음 저장에서 ID가 유지된다
+                val saved = repository.save(mac, draft)
+                _saved.value = saved
+                if (_draft.value == draft) _draft.value = saved
+                _result.value = ZONE_SAVED_MESSAGE
+                if (repository.isServerApplied) {
+                    followUp?.cancel()
+                    followUp = viewModelScope.launch { applyTracker.followUp(mac) }
+                }
             } catch (e: AppError) {
-                _result.value = e.message
+                _result.value = ZoneSaveErrors.describe(e, draft)
             } finally {
                 _saving.value = false
             }

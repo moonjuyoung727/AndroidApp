@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.data.ListSource
 import com.example.androidapplication.core.data.ListState
+import com.example.androidapplication.core.data.ZoneApplyStatus
 import java.time.Instant
 
 /** 화면 좌우 여백. */
@@ -464,6 +465,14 @@ fun <K> SettingSelect(
 fun NoticeBox(text: String, modifier: Modifier = Modifier, color: Color = NeuMuted) {
     Text(text, modifier.fillMaxWidth().padding(horizontal = 4.dp), color = color, style = MaterialTheme.typography.bodySmall)
 }
+
+/** 프라이버시 존 보드 적용 상태의 글자색 */
+val ZoneApplyStatus.color: Color
+    get() = when (this) {
+        ZoneApplyStatus.Applied -> NeuSuccess
+        ZoneApplyStatus.Pending -> NeuAccent
+        ZoneApplyStatus.Offline, ZoneApplyStatus.Delayed -> NeuWarning
+    }
 
 /** 조회 상태와 마지막 갱신 시각. */
 @Composable

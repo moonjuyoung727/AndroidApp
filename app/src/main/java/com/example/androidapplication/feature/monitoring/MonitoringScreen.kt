@@ -284,13 +284,19 @@ private fun MoreControlsSheet(vm: MonitoringViewModel, onDismiss: () -> Unit) {
 private fun InfoCard(camera: Camera, vm: MonitoringViewModel, nav: NavHostController) {
     val status by vm.deviceStatus.collectAsStateWithLifecycle()
     val zones by vm.zones.collectAsStateWithLifecycle()
+    val zoneApply by vm.zoneApplyStatus.collectAsStateWithLifecycle()
     var renaming by rememberSaveable { mutableStateOf(false) }
     var detailOpen by rememberSaveable { mutableStateOf(false) }
 
     ListGroup {
         ListRow("위치", value = camera.location.ifBlank { Validators.LOCATION_DEFAULT })
         ListRow("마지막 수신", value = KstTime.formatLastSeen(camera.lastSeen))
-        ListRow("프라이버시 존", value = "${zones.size}개 (활성 ${zones.count { it.enabled }}개)", onClick = { nav.navigate(PrivacyZoneRoute(camera.mac)) })
+        ListRow(
+            "프라이버시 존",
+            subtitle = zoneApply?.let { "보드 적용 상태: ${it.label}" },
+            value = "${zones.size}개 (활성 ${zones.count { it.enabled }}개)",
+            onClick = { nav.navigate(PrivacyZoneRoute(camera.mac)) }
+        )
         ListRow("상세 정보", divider = false, onClick = { detailOpen = true })
     }
 

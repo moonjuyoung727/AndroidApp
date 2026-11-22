@@ -41,11 +41,9 @@ interface DeviceApi {
 
 interface PrivacyZoneApi {
     @GET("devices/{mac}/privacy-zones") suspend fun list(@Path("mac") mac: String): List<PrivacyZoneDto>
-    @POST("devices/{mac}/privacy-zones") suspend fun add(@Path("mac") mac: String, @Body body: PrivacyZoneBody)
-    @PATCH("devices/{mac}/privacy-zones/{id}")
-    suspend fun update(@Path("mac") mac: String, @Path("id") id: String, @Body body: PrivacyZoneBody)
-    @HTTP(method = "DELETE", path = "devices/{mac}/privacy-zones", hasBody = true)
-    suspend fun delete(@Path("mac") mac: String, @Body body: ZoneDeleteRequest)
+    /** 일괄 저장. 보낸 목록이 보드의 전체 존이 되고, 응답은 저장 후 전체 목록 (ICD 2.6) */
+    @PUT("devices/{mac}/privacy-zones")
+    suspend fun replace(@Path("mac") mac: String, @Body body: PrivacyZonesRequest): List<PrivacyZoneDto>
 }
 
 interface EventApi {

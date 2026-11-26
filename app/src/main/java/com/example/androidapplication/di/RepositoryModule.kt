@@ -14,6 +14,8 @@ import com.example.androidapplication.core.data.RemoteVpnRepository
 import com.example.androidapplication.core.data.SettingsRepository
 import com.example.androidapplication.core.data.SubscriptionRepository
 import com.example.androidapplication.core.data.VpnRepository
+import com.example.androidapplication.core.push.DebugPushTokenSource
+import com.example.androidapplication.core.push.PushTokenSource
 import com.example.androidapplication.core.vpn.ClientVpnProbe
 import com.example.androidapplication.core.vpn.EmbeddedWireGuardController
 import com.example.androidapplication.core.vpn.RemoteClientVpnProbe
@@ -36,4 +38,6 @@ abstract class RepositoryModule {
     @Binds abstract fun subscription(impl: RemoteSubscriptionRepository): SubscriptionRepository
     @Binds abstract fun probe(impl: RemoteClientVpnProbe): ClientVpnProbe
     @Binds abstract fun tunnel(impl: EmbeddedWireGuardController): VpnTunnelController
+    // C-2에서 Firebase 토큰 공급원으로 바꾼다
+    @Binds abstract fun pushTokenSource(impl: DebugPushTokenSource): PushTokenSource
 }

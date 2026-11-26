@@ -85,7 +85,7 @@ class DashboardViewModel @Inject constructor(
                 val recent = async { events.list(EventQuery(size = 12)).items }
                 val today = async { events.list(EventQuery(size = 1, startDate = todayStart, endDate = todayEnd)).total }
                 val unconfirmed = async { events.list(EventQuery(size = 1, status = EventStatus.UNCONFIRMED)).total }
-                val counts = EventTypes.labels.keys.map { type ->
+                val counts = EventTypes.server.map { type ->
                     async { type to events.list(EventQuery(size = 1, startDate = start, endDate = end, eventType = type)).total }
                 }
                 _events.update {

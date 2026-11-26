@@ -51,6 +51,14 @@ interface EventApi {
     @PATCH("events/{id}") suspend fun update(@Path("id") id: String, @Body body: EventPatchRequest)
 }
 
+/** ICD I4 2.7.3 앱 푸시 토큰 등록·해제. 둘 다 204 No Content */
+interface PushTokenApi {
+    @PUT("notifications/push-token") suspend fun register(@Body body: PushTokenRequest)
+    // 일반 @DELETE는 본문을 보낼 수 없다
+    @HTTP(method = "DELETE", path = "notifications/push-token", hasBody = true)
+    suspend fun unregister(@Body body: PushTokenDeleteRequest)
+}
+
 interface VpnApi {
     @GET("status") suspend fun clientStatus(): ClientVpnStatusDto
     @GET("vpn/connections") suspend fun connections(): JsonElement

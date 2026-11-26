@@ -59,6 +59,20 @@ object KstTime {
 
     fun today(now: Instant = Instant.now()): LocalDate = now.atZone(ZONE).toLocalDate()
 
+    // 밀리초를 항상 붙인다. Instant.toString()은 0밀리초면 생략해 ICD 예시 형식과 달라진다
+    private val UTC_MILLIS = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+
+    /**
+     * KST 날짜(yyyy-MM-dd)의 0시를 UTC 시각으로. 예: 2026-11-24 → 2026-11-23T15:00:00.000Z
+     * `+09:00` 대신 Z를 쓰는 이유: 쿼리의 `+`가 공백으로 읽힐 수 있다.
+     */
+    fun dayStartUtc(date: String): String =
+        UTC_MILLIS.format(LocalDate.parse(date).atStartOfDay(ZONE).toInstant())
+
+    /** KST 날짜의 마지막 밀리초를 UTC 시각으로. 예: 2026-11-24 → 2026-11-24T14:59:59.999Z */
+    fun dayEndUtc(date: String): String =
+        UTC_MILLIS.format(LocalDate.parse(date).plusDays(1).atStartOfDay(ZONE).toInstant().minusMillis(1))
+
     /** 오늘을 포함해 [daysBack]일 전부터 오늘까지 (양 끝 포함, yyyy-MM-dd). */
     fun range(daysBack: Int, now: Instant = Instant.now()): Pair<String, String> {
         val end = today(now)

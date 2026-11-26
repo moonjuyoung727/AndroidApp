@@ -88,10 +88,10 @@ class NotificationSettingsViewModel @Inject constructor(
         }
     }
 
-    fun setDevice(mac: String, enabled: Boolean) {
+    fun setDevice(deviceId: String, enabled: Boolean) {
         val current = _server.value
-        val others = current.deviceAlerts.filterNot { it.mac == mac }
-        update(current.copy(deviceAlerts = others + DeviceAlert(mac, enabled)))
+        val others = current.deviceAlerts.filterNot { it.deviceId == deviceId }
+        update(current.copy(deviceAlerts = others + DeviceAlert(deviceId, enabled)))
     }
 
     fun updateLocal(next: LocalNotificationSettings) {

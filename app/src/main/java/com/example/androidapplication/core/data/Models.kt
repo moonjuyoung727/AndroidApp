@@ -126,14 +126,23 @@ inline fun silentlyIf(silent: Boolean, block: () -> Unit): Boolean {
 /* ===== 이벤트 ===== */
 
 object EventTypes {
+    /** ICD 2.3.1 event_type 전체. 필터 칩·유형별 건수는 이 4종만 쓴다 (웹 EVENT_TYPES와 같음). */
+    val server: List<String> = listOf("motion", "sound", "connection", "system")
+
     val labels: Map<String, String> = linkedMapOf(
         "motion" to "움직임 감지",
         "sound" to "소리 감지",
+        "connection" to "연결 상태",
+        "system" to "시스템",
+        // 예전 유형. 이 기기에 저장된 미디어의 표시용으로만 남긴다
         "camera_connect" to "카메라 연결",
         "camera_disconnect" to "카메라 연결 끊김",
         "vpn_connect" to "VPN 연결",
         "vpn_disconnect" to "VPN 연결 끊김"
     )
+
+    /** 필터 칩용 (값, 라벨) 목록. */
+    val serverOptions: List<Pair<String, String>> get() = server.map { it to label(it) }
 
     /** 모르는 값이 와도 죽지 않게 원문을 표시한다. */
     fun label(type: String): String = labels[type] ?: type
@@ -149,31 +158,39 @@ object EventStatus {
     }
 }
 
-// 프로세스 재생성에도 상세 화면을 복원할 수 있도록 내비게이션 인자로 직렬화한다
+// 프로세스 재생성에도 상세 화면을 복원할 수 있도록 내비게이션 인자로 직렬화한다.
+// 새 필드는 기본값을 꼭 둔다. 예전에 저장된 인자 JSON에 그 필드가 없어도 복원되어야 한다
 @Serializable
 data class EventItem(
     val id: String,
     val occurredAt: String,
-    val mac: String,
+    /** 서버가 이벤트에 mac을 주지 않아 비어 있다. 보드는 [deviceId]로 찾는다 */
+    val mac: String = "",
     val cameraName: String,
     val location: String? = null,
     val type: String,
     val status: String,
+    /** 서버 필드 이름은 detail. 인자 JSON 호환을 위해 이름은 그대로 둔다 */
     val description: String? = null,
     val snapshotUrl: String? = null,
     val videoUrl: String? = null,
     val soundLevelDb: Double? = null,
     val zoneId: String? = null,
     val memo: String? = null,
-    val isImportant: Boolean = false
+    val isImportant: Boolean = false,
+    /** 보드 ID (CAM- + MAC 끝 4자리). [Camera.deviceId]와 문자열 그대로 비교한다 */
+    val deviceId: String = "",
+    /** 객체 종류. 값 목록 미정 [TBR] */
+    val objectClass: String? = null
 )
 
+/** [startDate]·[endDate]는 KST 날짜(yyyy-MM-dd). 서버로 보낼 때 KST 하루의 UTC 시각으로 바꾼다. */
 data class EventQuery(
     val page: Int = 1,
     val size: Int = 30,
     val startDate: String? = null,
     val endDate: String? = null,
-    val mac: String? = null,
+    val deviceId: String? = null,
     val eventType: String? = null,
     val status: String? = null
 )
@@ -240,7 +257,7 @@ data class GeneralSettings(
     val defaultChannel: Int = 2
 )
 
-data class DeviceAlert(val mac: String, val enabled: Boolean)
+data class DeviceAlert(val deviceId: String, val enabled: Boolean)
 
 data class NotificationSettings(
     val motion: Boolean = true,

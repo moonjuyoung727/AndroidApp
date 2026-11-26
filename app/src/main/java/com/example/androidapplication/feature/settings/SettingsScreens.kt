@@ -112,7 +112,11 @@ fun NotificationSettingsScreen(vm: NotificationSettingsViewModel = hiltViewModel
             SettingToggle("보드 오프라인", null, s.offline, { vm.update(s.copy(offline = it)) })
             SettingToggle("보드 재연결", null, s.reconnect, { vm.update(s.copy(reconnect = it)) })
             SettingToggle("VPN 장애", null, l.vpn, { vm.updateLocal(l.copy(vpn = it)) })
-            SettingToggle("중요 이벤트만", null, s.importantOnly, { vm.update(s.copy(importantOnly = it)) })
+            // ICD I4 0.1 #8: 값은 저장·조회만 하고 서버가 발송 판정에 쓰지 않는다. 서버 값을 그대로 보여 주기만 한다
+            SettingToggle(
+                "중요 이벤트만", "다음 버전에서 적용됩니다.", s.importantOnly,
+                { vm.update(s.copy(importantOnly = it)) }, enabled = false
+            )
         }
         if (cameras.items.isNotEmpty()) {
             Text("기기별 알림", Modifier.padding(start = 4.dp), color = NeuMuted, style = MaterialTheme.typography.labelLarge)
@@ -120,8 +124,8 @@ fun NotificationSettingsScreen(vm: NotificationSettingsViewModel = hiltViewModel
                 cameras.items.forEach { camera ->
                     SettingToggle(
                         camera.name.ifBlank { camera.deviceId }, null,
-                        s.deviceAlerts.firstOrNull { it.mac == camera.mac }?.enabled ?: true,
-                        { vm.setDevice(camera.mac, it) }
+                        s.deviceAlerts.firstOrNull { it.deviceId == camera.deviceId }?.enabled ?: true,
+                        { vm.setDevice(camera.deviceId, it) }
                     )
                 }
             }

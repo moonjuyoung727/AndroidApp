@@ -3,6 +3,7 @@ package com.example.androidapplication.core.data
 import com.example.androidapplication.core.common.ApiError
 import com.example.androidapplication.core.common.ApiErrorCode
 import com.example.androidapplication.core.common.FeatureDisabledError
+import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.common.LOGIN_INVALID_CREDENTIALS_MESSAGE
 import com.example.androidapplication.core.common.LOGIN_TOO_MANY_REQUESTS_MESSAGE
 import com.example.androidapplication.core.common.SIGNUP_EMAIL_EXISTS_MESSAGE
@@ -232,10 +233,10 @@ class RemoteDeviceRepository @Inject constructor(
 }
 
 fun EventDto.toEvent() = EventItem(
-    id = eventId, occurredAt = occurredAt, mac = Mac.normalize(mac), cameraName = deviceName,
-    location = location, type = eventType, status = status, description = description,
+    id = eventId, occurredAt = occurredAt, cameraName = deviceName.ifBlank { deviceId },
+    location = location, type = eventType, status = status, description = detail,
     snapshotUrl = snapshotUrl, videoUrl = clipUrl, soundLevelDb = soundLevelDb, zoneId = zoneId,
-    memo = memo, isImportant = isImportant
+    memo = memo, isImportant = isImportant, deviceId = deviceId, objectClass = objectClass
 )
 
 class RemoteEventRepository @Inject constructor(
@@ -249,9 +250,10 @@ class RemoteEventRepository @Inject constructor(
         val params = buildMap {
             put("page", query.page.toString())
             put("size", query.size.toString())
-            query.startDate?.let { put("start_date", it) }
-            query.endDate?.let { put("end_date", it) }
-            query.mac?.let { put("mac", it) }
+            // 서버는 값을 변환 없이 occurred_at과 비교한다 (ICD 0.1 #6). KST 하루를 UTC 시각으로 보낸다
+            query.startDate?.let { put("start_date", KstTime.dayStartUtc(it)) }
+            query.endDate?.let { put("end_date", KstTime.dayEndUtc(it)) }
+            query.deviceId?.let { put("device_id", it) }
             query.eventType?.let { put("event_type", it) }
             query.status?.let { put("status", it) }
         }
@@ -322,7 +324,8 @@ class RemoteSettingsRepository @Inject constructor(
         val dto = caller.call("알림 설정 정보 조회 실패", timeoutMs = READ_TIMEOUT_MS) { api.notifications() }
         return NotificationSettings(
             dto.motion, dto.sound, dto.offline, dto.reconnect, dto.importantOnly,
-            dto.deviceAlerts.map { DeviceAlert(Mac.normalize(it.mac), it.enabled) }
+            // 예전에 mac 키로 저장된 항목은 device_id가 비어 읽힌다. 서버가 쓰지 않으므로 버려서 다시 보내지 않는다
+            dto.deviceAlerts.filter { it.deviceId.isNotBlank() }.map { DeviceAlert(it.deviceId, it.enabled) }
         )
     }
 
@@ -331,7 +334,7 @@ class RemoteSettingsRepository @Inject constructor(
             api.updateNotifications(
                 NotificationSettingsDto(
                     settings.motion, settings.sound, settings.offline, settings.reconnect, settings.importantOnly,
-                    settings.deviceAlerts.map { DeviceAlertDto(it.mac, it.enabled) }
+                    settings.deviceAlerts.map { DeviceAlertDto(it.deviceId, it.enabled) }
                 )
             )
         }

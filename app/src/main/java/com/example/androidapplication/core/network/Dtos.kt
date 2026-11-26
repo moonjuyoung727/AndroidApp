@@ -123,12 +123,15 @@ data class DeviceStatusDto(
 data class EventDto(
     @SerialName("event_id") val eventId: String = "",
     @SerialName("occurred_at") val occurredAt: String = "",
-    val mac: String = "",
+    /** ICD I4: 이벤트의 보드 식별자는 mac이 아니라 device_id (CAM- + MAC 끝 4자리) */
+    @SerialName("device_id") val deviceId: String = "",
     @SerialName("device_name") val deviceName: String = "",
+    /** ICD I4: 서버가 보내지 않음 (위치 표시는 다음 단계) */
     val location: String? = null,
     @SerialName("event_type") val eventType: String = "",
+    @SerialName("object_class") val objectClass: String? = null,
     val status: String = "unconfirmed",
-    val description: String? = null,
+    val detail: String? = null,
     @SerialName("snapshot_url") val snapshotUrl: String? = null,
     @SerialName("clip_url") val clipUrl: String? = null,
     @SerialName("sound_level_db") val soundLevelDb: Double? = null,
@@ -200,7 +203,8 @@ object GeneralSettingKeys {
     const val DEFAULT_CHANNEL = "default_channel"
 }
 
-@Serializable data class DeviceAlertDto(val mac: String = "", val enabled: Boolean = true)
+/** ICD I4 2.7: 보드 키는 device_id. 서버가 문자열 그대로 비교하므로 보드 목록의 값을 정규화 없이 보낸다 */
+@Serializable data class DeviceAlertDto(@SerialName("device_id") val deviceId: String = "", val enabled: Boolean = true)
 
 @Serializable
 data class NotificationSettingsDto(
@@ -211,6 +215,12 @@ data class NotificationSettingsDto(
     @SerialName("important_only") val importantOnly: Boolean = false,
     @SerialName("device_alerts") val deviceAlerts: List<DeviceAlertDto> = emptyList()
 )
+
+/* 2.7.3 푸시 토큰 (ICD I4) */
+/** platform은 android만 허용된다 (서버 400). AppJson이 encodeDefaults라 기본값도 보낸다 */
+@Serializable data class PushTokenRequest(val token: String, val platform: String = "android")
+
+@Serializable data class PushTokenDeleteRequest(val token: String)
 
 /* 2.4 클라우드 저장소 */
 @Serializable

@@ -48,7 +48,8 @@ enum class EventPeriod(val key: String, val label: String, val daysBack: Int) {
 data class EventFilters(
     val period: EventPeriod = EventPeriod.Today,
     val customDate: String? = null,
-    val mac: String? = null,
+    /** 보드 필터. Camera.deviceId 그대로 (정규화하지 않음) */
+    val deviceId: String? = null,
     val type: String? = null,
     val status: String? = null,
     val search: String = ""
@@ -94,7 +95,8 @@ class EventsViewModel @Inject constructor(
         EventFilters(
             period = EventPeriod.of(state["f_period"] ?: state.get<String>("period")),
             customDate = state["f_date"],
-            mac = state["f_mac"],
+            // 키 이름을 바꿔 예전 세션에 저장된 MAC이 device_id로 나가지 않게 한다
+            deviceId = state["f_device"],
             type = state["f_type"],
             status = state["f_status"] ?: state.get<String>("status"),
             search = state["f_search"] ?: ""
@@ -123,7 +125,7 @@ class EventsViewModel @Inject constructor(
         _filters.value = next
         state["f_period"] = next.period.key
         state["f_date"] = next.customDate
-        state["f_mac"] = next.mac
+        state["f_device"] = next.deviceId
         state["f_type"] = next.type
         state["f_status"] = next.status
         state["f_search"] = next.search
@@ -136,7 +138,7 @@ class EventsViewModel @Inject constructor(
     private fun query(pageNo: Int, size: Int = PAGE_SIZE): EventQuery {
         val f = _filters.value
         val (start, end) = f.range()
-        return EventQuery(pageNo, size, start, end, f.mac, f.type, f.status)
+        return EventQuery(pageNo, size, start, end, f.deviceId, f.type, f.status)
     }
 
     fun reload() {

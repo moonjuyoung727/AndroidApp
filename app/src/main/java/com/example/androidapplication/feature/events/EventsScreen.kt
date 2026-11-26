@@ -70,7 +70,7 @@ fun EventsScreen(nav: NavHostController, vm: EventsViewModel = hiltViewModel()) 
 
     val visible = remember(ui.items, filters.search) { ui.items.filter { it.matchesSearch(filters.search) } }
     val selecting = ui.selected.isNotEmpty()
-    val filterActive = filters.mac != null || filters.type != null || filters.status != null
+    val filterActive = filters.deviceId != null || filters.type != null || filters.status != null
 
     // 목록 끝에 가까워지면 다음 페이지를 받는다 (검색으로 짧아진 목록도 포함)
     val nearEnd by remember {
@@ -136,12 +136,12 @@ fun EventsScreen(nav: NavHostController, vm: EventsViewModel = hiltViewModel()) 
         ListGroup {
             SettingSelect(
                 "카메라", null,
-                listOf<Pair<String?, String>>(null to "전체") + cameras.items.map { it.mac to it.name.ifBlank { it.deviceId } },
-                filters.mac, { mac -> vm.update { it.copy(mac = mac) } }
+                listOf<Pair<String?, String>>(null to "전체") + cameras.items.map { it.deviceId to it.name.ifBlank { it.deviceId } },
+                filters.deviceId, { id -> vm.update { it.copy(deviceId = id) } }
             )
             SettingSelect(
                 "종류", null,
-                listOf<Pair<String?, String>>(null to "전체") + EventTypes.labels.map { (k, v) -> k to v },
+                listOf<Pair<String?, String>>(null to "전체") + EventTypes.serverOptions,
                 filters.type, { t -> vm.update { it.copy(type = t) } }
             )
             SettingSelect(
@@ -241,6 +241,8 @@ fun EventDetailScreen(nav: NavHostController, vm: EventDetailViewModel = hiltVie
         ListGroup {
             ListRow("시간", value = KstTime.format(event.occurredAt))
             ListRow("카메라", value = "${event.cameraName}${event.location?.let { " ($it)" } ?: ""}")
+            // UC7 기본 흐름 3. 값 목록은 NPU 실험 후 정해서 받은 문자열을 그대로 보여 준다
+            event.objectClass?.takeIf { it.isNotBlank() }?.let { ListRow("객체 종류", value = it) }
             // APP-F-032 감지 정보
             event.soundLevelDb?.let { ListRow("소리 크기", value = "%.1f dB".format(it)) }
             event.zoneId?.let { ListRow("감지 영역", value = it) }

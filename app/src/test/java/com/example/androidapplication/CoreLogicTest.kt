@@ -7,6 +7,9 @@ import com.example.androidapplication.core.common.pollLoop
 import com.example.androidapplication.core.config.ApiConfig
 import com.example.androidapplication.core.config.PrivacyZoneLimits
 import com.example.androidapplication.core.data.Camera
+import com.example.androidapplication.core.data.EventItem
+import com.example.androidapplication.core.data.EventTypes
+import com.example.androidapplication.core.data.toEvent
 import com.example.androidapplication.core.common.AppError
 import com.example.androidapplication.core.data.LIST_LOAD_FAILED_MESSAGE
 import com.example.androidapplication.core.data.ListSource
@@ -112,6 +115,21 @@ class KstTimeTest {
     @Test fun range_uses_kst_today() {
         val now = Instant.parse("2026-03-31T16:00:00Z") // KST 04-01 01:00
         assertEquals("2026-03-26" to "2026-04-01", KstTime.range(6, now))
+    }
+
+    // ICD I4 0.1 #6: KST 하루를 UTC 시각으로. 밀리초는 0이어도 붙인다
+    @Test fun kst_day_is_sent_as_utc_instants() {
+        assertEquals("2026-11-23T15:00:00.000Z", KstTime.dayStartUtc("2026-11-24"))
+        assertEquals("2026-11-24T14:59:59.999Z", KstTime.dayEndUtc("2026-11-24"))
+    }
+
+    @Test fun kst_day_boundary_splits_events() {
+        val start = Instant.parse(KstTime.dayStartUtc("2026-11-24"))
+        val end = Instant.parse(KstTime.dayEndUtc("2026-11-24"))
+        val kst0010 = Instant.parse("2026-11-23T15:10:00Z") // KST 11-24 00:10
+        val kstPrev2350 = Instant.parse("2026-11-23T14:50:00Z") // KST 11-23 23:50
+        assertTrue(kst0010 in start..end)
+        assertFalse(kstPrev2350 in start..end)
     }
 
     @Test fun durations() {
@@ -425,6 +443,62 @@ class NetworkParsingTest {
     @Test fun numeric_event_id_is_read_as_string() {
         val dto = AppJson.decodeFromString<com.example.androidapplication.core.network.EventDto>("""{"event_id":12,"event_type":"system"}""")
         assertEquals("12", dto.eventId)
+    }
+
+    // ICD I4 2.3.1 응답: device_id·detail·object_class를 읽고 내부 컬럼(event_key 등)은 무시한다
+    @Test fun event_reads_i4_fields() {
+        val dto = AppJson.decodeFromString<com.example.androidapplication.core.network.EventDto>(
+            """{"event_id":"e1","device_id":"CAM-4D5E","device_name":"현관","event_type":"motion",
+               "object_class":"person","detail":"사람 감지","event_key":"k1","created_at":"x","location":null}"""
+        )
+        val event = dto.toEvent()
+        assertEquals("CAM-4D5E", event.deviceId)
+        assertEquals("person", event.objectClass)
+        assertEquals("사람 감지", event.description)
+        assertEquals("", event.mac)
+        assertNull(event.location)
+    }
+
+    @Test fun event_name_falls_back_to_device_id() {
+        val dto = AppJson.decodeFromString<com.example.androidapplication.core.network.EventDto>("""{"event_id":"e1","device_id":"CAM-4D5E"}""")
+        assertEquals("CAM-4D5E", dto.toEvent().cameraName)
+    }
+
+    // 예전 버전이 저장한 내비게이션 인자 JSON(새 필드 없음)도 복원되어야 한다
+    @Test fun old_event_argument_json_still_decodes() {
+        val old = """{"id":"e1","occurredAt":"2026-11-24T01:00:00Z","mac":"AABBCCDDEEFF","cameraName":"A","type":"motion","status":"unconfirmed"}"""
+        val event = AppJson.decodeFromString(EventItem.serializer(), old)
+        assertEquals("", event.deviceId)
+        assertNull(event.objectClass)
+        assertEquals("AABBCCDDEEFF", event.mac)
+    }
+
+    @Test fun event_types_follow_icd() {
+        assertEquals(listOf("motion", "sound", "connection", "system"), EventTypes.server)
+        assertEquals("연결 상태", EventTypes.label("connection"))
+        assertEquals("시스템", EventTypes.label("system"))
+        assertEquals("unknown_type", EventTypes.label("unknown_type"))
+    }
+
+    // ICD I4 2.7: device_alerts는 device_id 키. 예전 mac 키 항목은 device_id가 비어 읽힌다
+    @Test fun device_alert_uses_device_id_key() {
+        val dto = AppJson.decodeFromString<com.example.androidapplication.core.network.NotificationSettingsDto>(
+            """{"device_alerts":[{"device_id":"CAM-4D5E","enabled":false},{"mac":"AABBCCDDEEFF","enabled":false}]}"""
+        )
+        assertEquals(listOf("CAM-4D5E", ""), dto.deviceAlerts.map { it.deviceId })
+        val sent = AppJson.encodeToString(
+            com.example.androidapplication.core.network.DeviceAlertDto.serializer(),
+            com.example.androidapplication.core.network.DeviceAlertDto("CAM-4D5E", false)
+        )
+        assertEquals("""{"device_id":"CAM-4D5E","enabled":false}""", sent)
+    }
+
+    @Test fun push_token_request_sends_platform() {
+        val body = AppJson.encodeToString(
+            com.example.androidapplication.core.network.PushTokenRequest.serializer(),
+            com.example.androidapplication.core.network.PushTokenRequest("t")
+        )
+        assertEquals("""{"token":"t","platform":"android"}""", body)
     }
 }
 

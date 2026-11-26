@@ -13,6 +13,7 @@ import com.example.androidapplication.core.data.EventStatus
 import com.example.androidapplication.core.data.SettingsRepository
 import com.example.androidapplication.core.data.SubscriptionRepository
 import com.example.androidapplication.core.data.VpnRepository
+import com.example.androidapplication.core.push.PushTokenRegistrar
 import com.example.androidapplication.core.session.AuthState
 import com.example.androidapplication.core.session.SessionManager
 import com.example.androidapplication.core.vpn.ClientVpnConnector
@@ -23,6 +24,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -41,6 +44,7 @@ class ShellViewModel @Inject constructor(
     private val eventRepository: EventRepository,
     private val settingsRepository: SettingsRepository,
     private val subscriptionRepository: SubscriptionRepository,
+    private val pushTokens: PushTokenRegistrar,
     bus: UiMessageBus
 ) : ViewModel() {
     val auth: StateFlow<AuthState> = sessions.state
@@ -66,10 +70,18 @@ class ShellViewModel @Inject constructor(
                     deviceRepository.clear()
                     vpnRepository.clear()
                     monitor.reset()
+                    pushTokens.forget()
                     _notifications.value = NotificationState()
                     _planName.value = null
                 }
             }
+        }
+        // ICD I4 2.7.3: 로그인·자동 로그인(restore) 모두 LoggedIn을 거친다. 서버에 닿을 수 있을 때 한 번 등록하고,
+        // 실패했으면 VPN이 다시 쓸 수 있게 될 때 또 시도한다
+        viewModelScope.launch {
+            combine(sessions.state, monitor.usable) { state, usable -> state is AuthState.LoggedIn && usable }
+                .distinctUntilChanged()
+                .collect { ready -> if (ready && !pushTokens.isRegistered) pushTokens.register() }
         }
     }
 
@@ -115,6 +127,8 @@ class ShellViewModel @Inject constructor(
     /** 서버 로그아웃이 실패해도 로컬 세션을 지운다. */
     fun logout() {
         viewModelScope.launch {
+            // 서버 로그아웃 뒤에는 토큰 해제가 인증을 통과하지 못하므로 먼저 부른다 (실패해도 계속)
+            runCatching { pushTokens.unregister() }
             runCatching { authRepository.logout() }
             runCatching { connector.disconnect() }
             sessions.clear()

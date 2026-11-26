@@ -151,7 +151,7 @@ fun MediaLibraryScreen(nav: NavHostController, vm: MediaLibraryViewModel = hiltV
             )
             SettingSelect(
                 "이벤트", null,
-                listOf<Pair<String?, String>>(null to "전체", ORIGIN_MANUAL to "직접 저장") + EventTypes.labels.map { (k, v) -> k to v },
+                listOf<Pair<String?, String>>(null to "전체", ORIGIN_MANUAL to "직접 저장") + EventTypes.serverOptions,
                 filters.origin, { o -> vm.setFilters { it.copy(origin = o) } }
             )
             SettingSelect("정렬", null, listOf(true to "최신순", false to "오래된순"), filters.newestFirst, { n -> vm.setFilters { it.copy(newestFirst = n) } })

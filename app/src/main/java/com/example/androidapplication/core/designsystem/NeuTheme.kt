@@ -50,7 +50,10 @@ val EventTypeColors: Map<String, Color> = mapOf(
     "camera_connect" to Color(0xFF63BFA3),
     "camera_disconnect" to Color(0xFFB8CC63),
     "vpn_connect" to Color(0xFFE08A6B),
-    "vpn_disconnect" to Color(0xFF8F9AA8)
+    "vpn_disconnect" to Color(0xFF8F9AA8),
+    // ICD 2.3.1 event_type. 웹 chartColors.js와 같은 색
+    "connection" to Color(0xFF63BFA3),
+    "system" to Color(0xFF8F9AA8)
 )
 
 fun eventColor(type: String): Color = EventTypeColors[type] ?: NeuMuted

@@ -192,13 +192,13 @@ private fun EventTypeSummary(counts: Map<String, Int>) {
     BigNumber("$total", "건")
     VerticalGap(14)
     Row(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(NeuSurfaceStrong)) {
-        if (total > 0) EventTypes.labels.keys.forEach { type ->
+        if (total > 0) EventTypes.server.forEach { type ->
             val count = counts[type] ?: 0
             if (count > 0) Box(Modifier.weight(count.toFloat()).fillMaxHeight().background(eventColor(type)))
         }
     }
     VerticalGap(14)
-    EventTypes.labels.toList().chunked(2).forEach { row ->
+    EventTypes.serverOptions.chunked(2).forEach { row ->
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             row.forEach { (type, label) ->
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

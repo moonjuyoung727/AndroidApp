@@ -50,6 +50,9 @@ android {
             "String", "API_BASE_URL_VPN",
             configValue("securecam.apiBaseUrl.vpn", "http://10.0.0.100:3000/v1")
         )
+        // I4 C-1: Firebase 연결 전 서버 푸시 토큰 API 시험용 가짜 토큰. 비어 있으면 등록하지 않는다
+        //   securecam.debugPushToken=<임의 문자열>
+        buildConfigField("String", "DEBUG_PUSH_TOKEN", configValue("securecam.debugPushToken", ""))
     }
 
     buildTypes {

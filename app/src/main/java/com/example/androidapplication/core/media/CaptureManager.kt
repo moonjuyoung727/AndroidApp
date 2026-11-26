@@ -3,6 +3,7 @@ package com.example.androidapplication.core.media
 import android.graphics.Bitmap
 import com.example.androidapplication.core.common.AppError
 import com.example.androidapplication.core.data.Camera
+import com.example.androidapplication.core.data.DeviceRepository
 import com.example.androidapplication.core.data.EventItem
 import com.example.androidapplication.core.common.KstTime
 import com.example.androidapplication.core.common.Mac
@@ -39,6 +40,7 @@ class CaptureManager @Inject constructor(
     private val engine: WebRtcEngine,
     private val library: MediaLibrary,
     private val sessions: SessionManager,
+    private val devices: DeviceRepository,
     private val okHttp: OkHttpClient,
     @param:Named("app") private val scope: CoroutineScope
 ) {
@@ -99,7 +101,10 @@ class CaptureManager @Inject constructor(
         library.findEventMedia(event.id, ownerId, type)?.let { return@withContext it }
         library.ensureCanSave(SNAPSHOT_MIN_FREE)
 
-        val mac = Mac.normalize(event.mac)
+        // 서버 이벤트에는 mac이 없다. 보드 목록에서 device_id로 찾고, 예전 인자 JSON이면 들어 있던 mac을 쓴다
+        val cameraMac = event.deviceId.takeIf { it.isNotEmpty() }
+            ?.let { id -> devices.cameras.value.items.firstOrNull { it.deviceId == id }?.mac }
+        val mac = Mac.normalize(cameraMac ?: event.mac).ifEmpty { throw CaptureError("이벤트의 카메라를 찾을 수 없습니다.") }
         val at = KstTime.parseUtc(event.occurredAt) ?: Instant.now()
         val name = MediaFileNames.event(event.id, at, if (type == MediaType.IMAGE) "jpg" else "mp4")
         val target = File(library.cameraDir(mac), name)
@@ -138,7 +143,7 @@ class CaptureManager @Inject constructor(
         library.register(
             MediaEntity(
                 ownerUserId = ownerId, type = type, source = MediaSource.EVENT_DOWNLOAD,
-                mac = mac, deviceId = Mac.deviceIdFrom(mac), cameraName = event.cameraName, location = event.location.orEmpty(),
+                mac = mac, deviceId = event.deviceId.ifEmpty { Mac.deviceIdFrom(mac) }, cameraName = event.cameraName, location = event.location.orEmpty(),
                 capturedAtUtc = at.toEpochMilli(), durationMs = duration, width = width, height = height,
                 sizeBytes = target.length(), filePath = target.path, thumbnailPath = thumb,
                 eventId = event.id, eventType = event.type

@@ -20,6 +20,7 @@ import com.example.androidapplication.core.network.DeviceApi
 import com.example.androidapplication.core.network.EventApi
 import com.example.androidapplication.core.network.PrivacyZoneApi
 import com.example.androidapplication.core.network.PublicApi
+import com.example.androidapplication.core.network.PushTokenApi
 import com.example.androidapplication.core.network.SettingsApi
 import com.example.androidapplication.core.network.SubscriptionApi
 import com.example.androidapplication.core.network.TokenProvider
@@ -113,5 +114,6 @@ object NetworkModule {
     @Provides @Singleton fun eventApi(@Named("vpn") r: Retrofit): EventApi = r.create(EventApi::class.java)
     @Provides @Singleton fun vpnApi(@Named("vpn") r: Retrofit): VpnApi = r.create(VpnApi::class.java)
     @Provides @Singleton fun settingsApi(@Named("vpn") r: Retrofit): SettingsApi = r.create(SettingsApi::class.java)
+    @Provides @Singleton fun pushTokenApi(@Named("vpn") r: Retrofit): PushTokenApi = r.create(PushTokenApi::class.java)
     @Provides @Singleton fun subscriptionApi(@Named("vpn") r: Retrofit): SubscriptionApi = r.create(SubscriptionApi::class.java)
 }

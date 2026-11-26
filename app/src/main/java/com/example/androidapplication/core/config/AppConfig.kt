@@ -44,6 +44,9 @@ object FeatureFlags {
     // ICD 2.6 프라이버시 존 일괄 저장 (PUT /devices/{mac}/privacy-zones)
     val privacyZones = true
 
+    // ICD I4 2.7.3 푸시 토큰 등록·해제. 토큰이 없으면(Firebase 연결 전) 어차피 호출하지 않는다
+    val pushToken = true
+
     // API 명세 없음 (사용자 정보·비밀번호 변경)
     val profileUpdate = false
     val passwordChange = false
